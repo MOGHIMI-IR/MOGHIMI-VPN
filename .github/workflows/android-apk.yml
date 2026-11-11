@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: moghimi-android-${{ github.ref }}
@@ -96,6 +96,18 @@ jobs:
           path: release-files/*
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish public beta release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: moghimi-beta-${{ github.run_number }}
+          name: Moghimi V2Ray Beta ${{ github.run_number }}
+          prerelease: true
+          make_latest: false
+          generate_release_notes: true
+          files: release-files/*
+          fail_on_unmatched_files: true
 
       - name: Write build summary
         if: always()

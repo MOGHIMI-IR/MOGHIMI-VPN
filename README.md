@@ -4,6 +4,7 @@
 
 - Website: https://moghimi-ir.github.io/MG_V2RAY/
 - Repository: https://github.com/MOGHIMI-IR/MOGHIMI-VPN
+- APK downloads: https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases
 - Builds: GitHub Actions → Build Moghimi V2Ray APK
 - App ID: ir.moghimi.v2ray
 

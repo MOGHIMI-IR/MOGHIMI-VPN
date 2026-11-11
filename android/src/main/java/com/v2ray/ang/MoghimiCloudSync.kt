@@ -83,23 +83,34 @@ object MoghimiCloudSync {
         subscription.autoUpdate = false
         MmkvManager.encodeSubscription(CLOUD_GROUP_ID, subscription)
 
-        // One parser pass replaces only the dedicated cloud group. Manually imported profiles
-        // are stored in other groups and remain untouched.
-        val combinedPayload = payloads.joinToString(separator = "\n\n")
-        val (profiles, subscriptions) = AngConfigManager.importBatchConfig(
-            combinedPayload,
-            CLOUD_GROUP_ID,
-            append = false
-        )
+        // Parse each entry separately. This preserves pretty-printed JSON files as well as
+        // multiple independent text entries. Only the first successfully imported entry replaces
+        // the Moghimi cloud group; subsequent entries append to that same group.
+        var importedProfiles = 0
+        var importedSubscriptions = 0
+        var firstCommittedPayload = true
 
-        if (profiles == 0 && subscriptions == 0) {
+        for (payload in payloads) {
+            val (profiles, subscriptions) = AngConfigManager.importBatchConfig(
+                payload,
+                CLOUD_GROUP_ID,
+                append = !firstCommittedPayload
+            )
+            importedProfiles += profiles
+            importedSubscriptions += subscriptions
+            if (profiles > 0 || subscriptions > 0) {
+                firstCommittedPayload = false
+            }
+        }
+
+        if (importedProfiles == 0 && importedSubscriptions == 0) {
             throw IOException("فایل‌ها دریافت شدند، اما کانفیگ معتبر شناسایی نشد.")
         }
 
         return SyncResult(
             activeEntries = entries.length(),
-            importedProfiles = profiles,
-            importedSubscriptions = subscriptions
+            importedProfiles = importedProfiles,
+            importedSubscriptions = importedSubscriptions
         )
     }
 
