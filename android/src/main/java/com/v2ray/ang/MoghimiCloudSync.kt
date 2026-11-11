@@ -146,8 +146,9 @@ object MoghimiCloudSync {
             setRequestProperty("Accept", "*/*")
             setRequestProperty("User-Agent", "MoghimiV2Ray-Android/1.0.0")
             if (includeApiKey) {
+                // Supabase sb_publishable keys are opaque API keys, not JWTs.
+                // Send them only in the apikey header; Authorization is reserved for user JWTs.
                 setRequestProperty("apikey", PUBLISHABLE_KEY)
-                setRequestProperty("Authorization", "Bearer $PUBLISHABLE_KEY")
             }
             if (body != null) {
                 doOutput = true
