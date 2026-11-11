@@ -1,0 +1,3 @@
+[submodule "android/upstream"]
+	path = android/upstream
+	url = https://github.com/2dust/v2rayNG.git

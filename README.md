@@ -1,5 +1,12 @@
-# Moghimi V2Ray for Android
+# Moghimi V2Ray | Android
 
-Native Android VPN client for Moghimi V2Ray, built on the GPL-3.0 v2rayNG/Xray client.
+کلاینت بومی اندروید برای کانفیگ‌های مقیمی V2Ray؛ با اتصال واقعی VPN، دریافت خودکار کانفیگ‌های فعال سایت و امکان افزودن کانفیگ دستی.
 
-The Android source, branding patch, cloud sync integration, build workflow and third-party notices live in this repository. APK builds are produced by GitHub Actions.
+- Website: https://moghimi-ir.github.io/MG_V2RAY/
+- Repository: https://github.com/MOGHIMI-IR/MOGHIMI-VPN
+- Builds: GitHub Actions → Build Moghimi V2Ray APK
+- App ID: ir.moghimi.v2ray
+
+جزئیات ساخت، همگام‌سازی Supabase و وضعیت نسخهٔ بتا در android/README.md آمده است.
+
+This project is based on v2rayNG and is distributed under GPL-3.0. See android/THIRD_PARTY_NOTICES.md.
