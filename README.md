@@ -1,13 +1,72 @@
-# Moghimi V2Ray | Android
+# 🚀 Moghimi V2Ray | Android VPN Client
 
-کلاینت بومی اندروید برای کانفیگ‌های مقیمی V2Ray؛ با اتصال واقعی VPN، دریافت خودکار کانفیگ‌های فعال سایت و امکان افزودن کانفیگ دستی.
+<div align="center">
 
-- Website: https://moghimi-ir.github.io/MG_V2RAY/
-- Repository: https://github.com/MOGHIMI-IR/MOGHIMI-VPN
-- APK downloads: https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases
-- Builds: GitHub Actions → Build Moghimi V2Ray APK
-- App ID: ir.moghimi.v2ray
+**کلاینت بومی اندروید برای اتصال V2Ray با همگام‌سازی کانفیگ‌های سایت مقیمی**
 
-جزئیات ساخت، همگام‌سازی Supabase و وضعیت نسخهٔ بتا در android/README.md آمده است.
+[🌐 ورود به سایت رسمی](https://moghimi-ir.github.io/MG_V2RAY/) · [⬇️ دانلود مستقیم ARM64 از Supabase](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a.apk) · [📦 همه نسخه‌ها در GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases)
 
-This project is based on v2rayNG and is distributed under GPL-3.0. See android/THIRD_PARTY_NOTICES.md.
+</div>
+
+---
+
+## 📲 دانلود اپلیکیشن
+
+نسخه فعلی: **Beta 1.0.0 · Android · ARM64**
+
+| اولویت | دریافت |
+|---|---|
+| ⭐ دانلود ۱ · Supabase | [دانلود مستقیم APK برای اندروید](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a.apk) |
+| دانلود ۲ · GitHub | [دانلود APK از Release](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-4/MoghimiV2Ray_1.0.0_arm64-v8a.apk) |
+| سایر معماری‌ها | [مشاهده همه فایل‌های انتشار](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases) |
+
+برای بیشتر گوشی‌های اندرویدی جدید، ARM64 گزینه مناسب است. Universal و سایر معماری‌ها در بخش Releases قرار دارند. فایل APK مخصوص اندروید است و روی iOS نصب نمی‌شود.
+
+## 💡 تفاوت اصلی این برنامه با سایر برنامه‌ها در چیست؟
+
+📝 کانفیگ‌های فعال V2Ray که در سایت مقیمی منتشر می‌شوند، با همگام‌سازی به برنامه اضافه می‌شوند؛ بنابراین نیازی نیست برای هر کانفیگ جداگانه جست‌وجو و ورود دستی انجام بدهی.
+
+⚙️ همگام‌سازی هنگام اجرای برنامه، با دکمه ابر و به‌صورت دوره‌ای حدود هر ۶ ساعت انجام می‌شود. زمان اجرای کار پس‌زمینه ممکن است طبق محدودیت‌های باتری و زمان‌بندی Android کمی جابه‌جا شود.
+
+🛑 کانفیگ‌هایی که در پنل سایت غیرفعال یا حذف شوند، پس از همگام‌سازی بعدی از گروه ابری برنامه کنار می‌روند و موارد فعال جدید جایگزین می‌شوند.
+
+🔄 **شفاف‌سازی:** نسخه فعلی سلامت همه سرورها را به‌صورت خودکار و پیوسته Ping نمی‌کند؛ تشخیص و غیرفعال‌کردن کانفیگ‌های ازکارافتاده از سمت مدیریت سایت انجام می‌شود.
+
+## ✨ قابلیت‌ها
+
+- اتصال واقعی VPN با Android VpnService و هسته Xray.
+- همگام‌سازی کانفیگ‌های فعال سایت از Supabase.
+- افزودن دستی لینک، متن، Clipboard، فایل و QR Code.
+- تست تأخیر TCP و تأخیر اتصال سرورها.
+- جداسازی کانفیگ‌های ابری سایت از کانفیگ‌های دستی کاربر.
+- پشتیبانی از پروتکل‌های موجود در نسخه پین‌شده v2rayNG؛ از جمله VLESS، VMess، Trojan، Shadowsocks، SOCKS، WireGuard و Hysteria2.
+
+## 🌐 ورود به سایت
+
+در سایت رسمی می‌توانی کانفیگ‌ها را مشاهده و دریافت کنی یا درخواست اتصال اختصاصی ثبت کنی.
+
+**[ورود به سایت Moghimi V2Ray ←](https://moghimi-ir.github.io/MG_V2RAY/)**
+
+## 🔧 ساخت و انتشار APK
+
+گردش‌کار GitHub Actions در `.github/workflows/android-apk.yml` سورس و submodule پین‌شده، کتابخانه TUN و فایل AAR هسته Xray را آماده می‌کند؛ سپس تست‌های واحد و ساخت APKهای معماری‌های مختلف را اجرا کرده و در صورت موفقیت، خروجی‌ها را در GitHub Releases منتشر می‌کند.
+
+برای اجرای دستی: GitHub → Actions → Build Moghimi V2Ray APK → Run workflow.
+
+## 🔐 همگام‌سازی و حریم خصوصی
+
+- برنامه از Supabase publishable key عمومی استفاده می‌کند؛ کلید service-role یا رمز مدیر داخل APK قرار نگرفته است.
+- فقط ردیف‌های فعال و مجاز برای خواندن درخواست می‌شوند.
+- فایل‌های خصوصی کانفیگ، در صورت استفاده، با لینک امضاشده و موقت دریافت می‌شوند.
+- ترافیک VPN از طریق تونل Android به سرور انتخابی می‌رود و از Supabase عبور نمی‌کند.
+- همگام‌سازی پس‌زمینه وابسته به زمان‌بندی WorkManager و محدودیت‌های Android است؛ همگام‌سازی دستی و هنگام اجرای برنامه نیز وجود دارد.
+
+## 🧪 وضعیت انتشار
+
+این خروجی نسخه **Beta 1.0.0** است. ساخت APK و تست‌های واحد در GitHub Actions موفق بوده‌اند؛ بااین‌حال، عملکرد اتصال، سازگاری با تمام مدل‌های گوشی و همگام‌سازی باید روی دستگاه واقعی نیز آزمایش شود.
+
+بیلدهای فعلی از نوع debug-signed هستند. تا پیش از تنظیم keystore خصوصی ثابت برای امضای انتشار، ممکن است نصب نسخه بعدی روی نسخه فعلی نیازمند حذف نسخه قبلی باشد. حذف برنامه ممکن است داده‌های محلی را پاک کند. هرگز فایل keystore یا رمزهای آن را در مخزن عمومی قرار نده.
+
+## 📜 مجوز و وابستگی‌ها
+
+این پروژه بر پایه v2rayNG و هسته Xray ساخته شده است. جزئیات مجوزها و اطلاعیه‌های وابستگی‌ها در [android/THIRD_PARTY_NOTICES.md](android/THIRD_PARTY_NOTICES.md) قرار دارد. کدهای upstream و پچ‌های اختصاصی مقیمی در همین مخزن نگهداری می‌شوند.
