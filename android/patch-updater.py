@@ -193,7 +193,7 @@ replace_once(
         }
     }
 
-    private fun shareToClipboard(guid: String): Boolean =""",
+    private fun scheduleMoghimiBackgroundSync() {",
     "update dialog"
 )
 
