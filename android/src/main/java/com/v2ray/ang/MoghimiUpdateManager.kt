@@ -31,7 +31,7 @@ import java.util.Locale
  */
 object MoghimiUpdateManager {
     const val EXTRA_OPEN_UPDATE = "com.v2ray.ang.extra.OPEN_MOGHIMI_UPDATE"
-    const val ARM64_APK_URL = ""
+    const val ARM64_APK_URL = "https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20(1).apk"
 
     private const val RELEASES_API =
         "https://api.github.com/repos/MOGHIMI-IR/MOGHIMI-VPN/releases?per_page=100"
