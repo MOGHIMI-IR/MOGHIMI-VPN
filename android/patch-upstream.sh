@@ -57,7 +57,7 @@ if 'ndkVersion = "30.0.16248370"' not in source:
         1
     )
 
-signing_marker = "    buildTypes {\\n"
+signing_marker = "    buildTypes {\n"
 signing_block = """    val moghimiStoreFile = System.getenv("MOGHIMI_SIGNING_STORE_FILE")
     val moghimiStorePassword = System.getenv("MOGHIMI_SIGNING_STORE_PASSWORD")
     val moghimiKeyAlias = System.getenv("MOGHIMI_SIGNING_KEY_ALIAS")
@@ -279,7 +279,7 @@ main_screen_file.write_text(main_screen, encoding="utf-8")
 
 replace_once(
     main_screen_file,
-    "    val shareQRCodeBitmap = uiState.shareQRCodeBitmap\\n",
+    "    val shareQRCodeBitmap = uiState.shareQRCodeBitmap\n",
     """    val shareQRCodeBitmap = uiState.shareQRCodeBitmap
     val cloudGroupStateFlow = remember(mainViewModel) {
         mainViewModel.serverGroupState(MoghimiCloudSync.CLOUD_GROUP_ID)
@@ -423,20 +423,20 @@ pager_file = java / "ui/main/MainServerPager.kt"
 pager = pager_file.read_text(encoding="utf-8")
 if "import androidx.compose.foundation.border" not in pager:
     pager = pager.replace(
-        "import androidx.compose.foundation.background\\n",
-        "import androidx.compose.foundation.background\\nimport androidx.compose.foundation.border\\n",
+        "import androidx.compose.foundation.background\n",
+        "import androidx.compose.foundation.background\nimport androidx.compose.foundation.border\n",
         1
     )
 if "import androidx.compose.foundation.shape.RoundedCornerShape" not in pager:
     pager = pager.replace(
-        "import androidx.compose.foundation.shape.CircleShape\\n",
-        "import androidx.compose.foundation.shape.CircleShape\\nimport androidx.compose.foundation.shape.RoundedCornerShape\\n",
+        "import androidx.compose.foundation.shape.CircleShape\n",
+        "import androidx.compose.foundation.shape.CircleShape\nimport androidx.compose.foundation.shape.RoundedCornerShape\n",
         1
     )
 if "import androidx.compose.ui.graphics.Color" not in pager:
     pager = pager.replace(
-        "import androidx.compose.ui.graphics\\n",
-        "import androidx.compose.ui.graphics.Color\\n",
+        "import androidx.compose.material3.MaterialTheme\n",
+        "import androidx.compose.material3.MaterialTheme\nimport androidx.compose.ui.graphics.Color\n",
         1
     )
 replace_once(
