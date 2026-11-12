@@ -30,7 +30,7 @@ manifest = app / "src/main/AndroidManifest.xml"
 replace_once(
     manifest,
     '<uses-permission android:name="android.permission.INTERNET" />',
-    '<uses-permission android:name="android.permission.INTERNET" />\\n'
+    '<uses-permission android:name="android.permission.INTERNET" />\n'
     '    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />',
     "installer permission"
 )
@@ -40,7 +40,7 @@ activity_file = java / "ui/main/MainActivity.kt"
 # Imports for the update dialog, installer, notification worker and state.
 replace_once(
     activity_file,
-    "import android.content.Intent\\n",
+    "import android.content.Intent\n",
     """import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -64,7 +64,7 @@ import com.v2ray.ang.MoghimiUpdateWorker
 
 replace_once(
     activity_file,
-    "    private var moghimiSyncRunning = false\\n",
+    "    private var moghimiSyncRunning = false\n",
     """    private var moghimiSyncRunning = false
     private val updateInfoState = mutableStateOf<MoghimiUpdateManager.UpdateInfo?>(null)
     private val showUpdateDialogState = mutableStateOf(false)
@@ -78,7 +78,7 @@ replace_once(
 
 replace_once(
     activity_file,
-    "    private val profileEditorLauncher =\\n",
+    "    private val profileEditorLauncher =\n",
     """    private val requestInstallSourcePermission =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
             val pending = pendingMoghimiUpdateInstall
@@ -101,7 +101,7 @@ replace_once(
 
 replace_once(
     activity_file,
-    "        scheduleMoghimiBackgroundSync()\\n",
+    "        scheduleMoghimiBackgroundSync()\n",
     """        scheduleMoghimiBackgroundSync()
         scheduleMoghimiUpdateChecks()
         checkMoghimiUpdates(
@@ -199,7 +199,7 @@ replace_once(
 
 replace_once(
     activity_file,
-    "            MainDestination.CheckUpdate -> Intent(this, CheckUpdateActivity::class.java)\\n",
+    "            MainDestination.CheckUpdate -> Intent(this, CheckUpdateActivity::class.java)\n",
     """            MainDestination.CheckUpdate -> {
                 checkMoghimiUpdates(forcePrompt = true)
                 return
