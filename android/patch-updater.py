@@ -194,7 +194,7 @@ replace_once(
         }
     }
 
-    private fun scheduleMoghimiBackgroundSync() {",
+    private fun scheduleMoghimiBackgroundSync() {""",
     "update dialog"
 )
 
