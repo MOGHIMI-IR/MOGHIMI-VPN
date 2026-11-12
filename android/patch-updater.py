@@ -72,6 +72,7 @@ replace_once(
     private val updateProgressState = mutableIntStateOf(0)
     private val updateStatusState = mutableStateOf("")
     private var pendingMoghimiUpdateInstall: MoghimiUpdateManager.UpdateInfo? = null
+    private var moghimiUpdateCheckRunning = false
 """,
     "updater activity state"
 )
@@ -223,6 +224,19 @@ update_methods = """    private fun scheduleMoghimiUpdateChecks() {
     }
 
     private fun checkMoghimiUpdates(forcePrompt: Boolean) {
+        if (moghimiUpdateCheckRunning) return
+        if (!MoghimiUpdateManager.hasConfiguredDownloadUrl()) {
+            if (forcePrompt) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "لینک دانلود نسخه ARM64 از سوپابیس هنوز تنظیم نشده است.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            return
+        }
+
+        moghimiUpdateCheckRunning = true
         lifecycleScope.launch {
             try {
                 val available = withContext(Dispatchers.IO) {
@@ -255,6 +269,8 @@ update_methods = """    private fun scheduleMoghimiUpdateChecks() {
                         Toast.LENGTH_LONG
                     ).show()
                 }
+            } finally {
+                moghimiUpdateCheckRunning = false
             }
         }
     }

@@ -40,6 +40,7 @@ object MoghimiCloudSync {
      * Fetch all active payloads before replacing the app-owned group. If a file download
      * fails, the previously working Moghimi group is left untouched.
      */
+    @Synchronized
     fun sync(): SyncResult {
         val entries = JSONArray(request(CONFIG_TABLE_URL, "GET"))
         if (entries.length() == 0) {

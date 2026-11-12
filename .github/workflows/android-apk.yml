@@ -51,6 +51,28 @@ jobs:
           MOGHIMI_VERSION_CODE: ${{ github.run_number }}
         run: bash android/patch-upstream.sh
 
+      - name: Prepare stable signing key when configured
+        shell: bash
+        env:
+          MOGHIMI_SIGNING_KEYSTORE_BASE64: ${{ secrets.MOGHIMI_SIGNING_KEYSTORE_BASE64 }}
+          MOGHIMI_SIGNING_STORE_PASSWORD: ${{ secrets.MOGHIMI_SIGNING_STORE_PASSWORD }}
+          MOGHIMI_SIGNING_KEY_ALIAS: ${{ secrets.MOGHIMI_SIGNING_KEY_ALIAS }}
+          MOGHIMI_SIGNING_KEY_PASSWORD: ${{ secrets.MOGHIMI_SIGNING_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$MOGHIMI_SIGNING_KEYSTORE_BASE64" ]]; then
+            echo "MOGHIMI_SIGNING_MODE=debug-fallback" >> "$GITHUB_ENV"
+            echo "::warning::Stable signing secrets are not configured; Android may reject in-place app updates."
+            exit 0
+          fi
+          if [[ -z "$MOGHIMI_SIGNING_STORE_PASSWORD" || -z "$MOGHIMI_SIGNING_KEY_ALIAS" || -z "$MOGHIMI_SIGNING_KEY_PASSWORD" ]]; then
+            echo "::error::All Moghimi signing secrets must be configured together."
+            exit 1
+          fi
+          printf '%s' "$MOGHIMI_SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/moghimi-signing.jks"
+          test -s "$RUNNER_TEMP/moghimi-signing.jks"
+          echo "MOGHIMI_SIGNING_STORE_FILE=$RUNNER_TEMP/moghimi-signing.jks" >> "$GITHUB_ENV"
+          echo "MOGHIMI_SIGNING_MODE=stable" >> "$GITHUB_ENV"
+
       - name: Build native TUN helper
         working-directory: android/upstream
         run: |
@@ -78,6 +100,10 @@ jobs:
 
       - name: Run unit tests and build the ARM64 beta APK
         working-directory: android/upstream/V2rayNG
+        env:
+          MOGHIMI_SIGNING_STORE_PASSWORD: ${{ secrets.MOGHIMI_SIGNING_STORE_PASSWORD }}
+          MOGHIMI_SIGNING_KEY_ALIAS: ${{ secrets.MOGHIMI_SIGNING_KEY_ALIAS }}
+          MOGHIMI_SIGNING_KEY_PASSWORD: ${{ secrets.MOGHIMI_SIGNING_KEY_PASSWORD }}
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
@@ -90,6 +116,10 @@ jobs:
           find android/upstream/V2rayNG/app/build/outputs/apk/playstore/debug -maxdepth 1 -type f -name '*.apk' -print0 \
             | xargs -0 -r sha256sum > release-files/SHA256SUMS
           cp android/upstream/V2rayNG/app/build/outputs/apk/playstore/debug/*.apk release-files/
+          APK="$(find android/upstream/V2rayNG/app/build/outputs/apk/playstore/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$APK"
+          "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$APK" > release-files/SIGNING.txt
+          echo "Signing mode: ${MOGHIMI_SIGNING_MODE:-debug-fallback}" >> release-files/SIGNING.txt
 
       - name: Upload ARM64 APK and checksum
         uses: actions/upload-artifact@v4
@@ -121,5 +151,6 @@ jobs:
             echo "- Source: pinned v2rayNG/Xray checkout"
             echo "- App package: ir.moghimi.v2ray"
             echo "- Version: 1.0.0 (build ${{ github.run_number }}, ARM64 only)"
+            echo "- Signing mode: ${MOGHIMI_SIGNING_MODE:-debug-fallback}"
             echo "- APK architecture variants are listed in the Artifacts section when the build succeeds."
           } >> "$GITHUB_STEP_SUMMARY"

@@ -16,6 +16,7 @@ fi
 mkdir -p "$JAVA"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/MoghimiCloudSync.kt" "$JAVA/MoghimiCloudSync.kt"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/MoghimiSyncWorker.kt" "$JAVA/MoghimiSyncWorker.kt"
+cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiHomeHeader.kt" "$JAVA/ui/main/MoghimiHomeHeader.kt"
 
 python3 - "$PROJECT" <<'PY'
 from pathlib import Path
@@ -55,6 +56,39 @@ if 'ndkVersion = "30.0.16248370"' not in source:
         replace_marker + '\n    ndkVersion = "30.0.16248370"',
         1
     )
+
+signing_marker = "    buildTypes {\\n"
+signing_block = """    val moghimiStoreFile = System.getenv("MOGHIMI_SIGNING_STORE_FILE")
+    val moghimiStorePassword = System.getenv("MOGHIMI_SIGNING_STORE_PASSWORD")
+    val moghimiKeyAlias = System.getenv("MOGHIMI_SIGNING_KEY_ALIAS")
+    val moghimiKeyPassword = System.getenv("MOGHIMI_SIGNING_KEY_PASSWORD")
+    if (!moghimiStoreFile.isNullOrBlank()) {
+        if (moghimiStorePassword.isNullOrBlank() ||
+            moghimiKeyAlias.isNullOrBlank() ||
+            moghimiKeyPassword.isNullOrBlank() ||
+            !file(moghimiStoreFile).isFile
+        ) {
+            throw GradleException("Moghimi stable signing is enabled but its keystore or credentials are incomplete.")
+        }
+        signingConfigs {
+            create("moghimiStable") {
+                storeFile = file(moghimiStoreFile)
+                storePassword = moghimiStorePassword
+                keyAlias = moghimiKeyAlias
+                keyPassword = moghimiKeyPassword
+            }
+        }
+        buildTypes {
+            getByName("debug") {
+                signingConfig = signingConfigs.getByName("moghimiStable")
+            }
+        }
+    }
+
+"""
+if source.count(signing_marker) != 1:
+    raise SystemExit("Could not locate Android debug build type for stable signing")
+source = source.replace(signing_marker, signing_block + signing_marker, 1)
 gradle.write_text(source, encoding="utf-8")
 
 # Apply the Moghimi palette. System dynamic colors default to off so Android 12+
@@ -225,6 +259,7 @@ import androidx.compose.foundation.background
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import com.v2ray.ang.R
+import com.v2ray.ang.MoghimiCloudSync
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
@@ -241,12 +276,29 @@ if "import androidx.compose.material3.Surface" not in main_screen:
     )
 main_screen_file.write_text(main_screen, encoding="utf-8")
 
+
+replace_once(
+    main_screen_file,
+    "    val shareQRCodeBitmap = uiState.shareQRCodeBitmap\\n",
+    """    val shareQRCodeBitmap = uiState.shareQRCodeBitmap
+    val cloudGroupStateFlow = remember(mainViewModel) {
+        mainViewModel.serverGroupState(MoghimiCloudSync.CLOUD_GROUP_ID)
+    }
+    val cloudGroupState by cloudGroupStateFlow.collectAsStateWithLifecycle()
+""",
+    "Moghimi cloud server count"
+)
+
 replace_once(
     main_screen_file,
     """                ) {
                     if (groups.size > 1) {""",
     """                ) {
-                    MoghimiBrandBanner(isRunning = isRunning)
+                    MoghimiHomeHeader(
+                        isRunning = isRunning,
+                        serverCount = cloudGroupState.rows.size,
+                        onCloudSyncClick = onCloudSyncClick
+                    )
                     if (groups.size > 1) {""",
     "brand banner in server view"
 )
@@ -262,7 +314,11 @@ replace_once(
                         .padding(top = innerPadding.calculateTopPadding()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    MoghimiBrandBanner(isRunning = isRunning)
+                    MoghimiHomeHeader(
+                        isRunning = isRunning,
+                        serverCount = cloudGroupState.rows.size,
+                        onCloudSyncClick = onCloudSyncClick
+                    )
                     Text(
                         text = androidx.compose.ui.res.stringResource(R.string.moghimi_empty_title),
                         color = MaterialTheme.colorScheme.onSurface,
@@ -361,6 +417,56 @@ private fun MoghimiBrandBanner(isRunning: Boolean) {
 main_screen_file.write_text(main_screen, encoding="utf-8")
 
 
+
+# Rounded server cards with a clear selected state.
+pager_file = java / "ui/main/MainServerPager.kt"
+pager = pager_file.read_text(encoding="utf-8")
+if "import androidx.compose.foundation.border" not in pager:
+    pager = pager.replace(
+        "import androidx.compose.foundation.background\\n",
+        "import androidx.compose.foundation.background\\nimport androidx.compose.foundation.border\\n",
+        1
+    )
+if "import androidx.compose.foundation.shape.RoundedCornerShape" not in pager:
+    pager = pager.replace(
+        "import androidx.compose.foundation.shape.CircleShape\\n",
+        "import androidx.compose.foundation.shape.CircleShape\\nimport androidx.compose.foundation.shape.RoundedCornerShape\\n",
+        1
+    )
+if "import androidx.compose.ui.graphics.Color" not in pager:
+    pager = pager.replace(
+        "import androidx.compose.ui.graphics\\n",
+        "import androidx.compose.ui.graphics.Color\\n",
+        1
+    )
+replace_once(
+    pager_file,
+    """        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .semantics {""",
+    """        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 5.dp)
+            .background(
+                color = if (isSelected) Color(0xFF202D52)
+                else MaterialTheme.colorScheme.surfaceContainer,
+                shape = RoundedCornerShape(18.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.82f)
+                else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.38f),
+                shape = RoundedCornerShape(18.dp)
+            )
+            .clip(RoundedCornerShape(18.dp))
+            .height(IntrinsicSize.Min)
+            .semantics {""",
+    "rounded server list cards"
+)
+pager = pager.replace("ItemDivider()", "Spacer(modifier = Modifier.height(6.dp))")
+pager_file.write_text(pager, encoding="utf-8")
+
 # Automatic cloud sync at app launch, manually from toolbar, and periodically in background.
 main_activity_file = java / "ui/main/MainActivity.kt"
 activity = main_activity_file.read_text(encoding="utf-8")
@@ -380,6 +486,8 @@ import androidx.work.WorkManager
 import com.v2ray.ang.MoghimiCloudSync
 import com.v2ray.ang.MoghimiSyncWorker
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 """,
     1
 )
@@ -449,6 +557,18 @@ methods = """    private fun scheduleMoghimiBackgroundSync() {
                     mainViewModel.onAction(
                         MainAction.SelectGroup(MoghimiCloudSync.CLOUD_GROUP_ID)
                     )
+                    val cloudServers = withTimeoutOrNull(15_000L) {
+                        mainViewModel.serversForGroup(MoghimiCloudSync.CLOUD_GROUP_ID)
+                            .first { servers -> servers.isNotEmpty() }
+                    }
+                    if (!cloudServers.isNullOrEmpty()) {
+                        val selectedGuid = mainViewModel.uiState.value.selectedGuid
+                        if (cloudServers.none { it.guid == selectedGuid }) {
+                            mainViewModel.onAction(
+                                MainAction.SelectServer(cloudServers.first().guid)
+                            )
+                        }
+                    }
                 }
                 if (!silent) {
                     Toast.makeText(

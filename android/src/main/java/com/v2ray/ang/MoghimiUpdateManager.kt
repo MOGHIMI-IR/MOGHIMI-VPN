@@ -6,6 +6,7 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -58,6 +59,7 @@ object MoghimiUpdateManager {
      * the final six digits are the CI run number used in the release tag.
      */
     fun checkForUpdate(context: Context): UpdateInfo? {
+        if (!hasConfiguredDownloadUrl()) return null
         val response = requestText(
             RELEASES_API,
             accept = "application/vnd.github+json"
@@ -284,6 +286,7 @@ object MoghimiUpdateManager {
                 partialFile.delete()
             }
 
+            verifyDownloadedApk(context, info, finalFile)
             onProgress(100)
             return finalFile
         } catch (error: Exception) {
@@ -292,6 +295,64 @@ object MoghimiUpdateManager {
         } finally {
             connection.disconnect()
         }
+    }
+
+
+    /**
+     * Validate the file before opening Android's installer. The SHA-256 check is performed
+     * during download; these checks verify that it is the expected Moghimi app/build/signer.
+     */
+    private fun verifyDownloadedApk(context: Context, info: UpdateInfo, apkFile: File) {
+        val flags = if (Build.VERSION.SDK_INT >= 28) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
+        }
+        val archive = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags)
+            ?: throw IOException("فایل دریافتی ساختار APK معتبر ندارد.")
+
+        if (archive.packageName != context.packageName) {
+            throw IOException("این فایل متعلق به برنامه مقیمی نیست؛ نصب متوقف شد.")
+        }
+        if (archive.versionName != info.versionName) {
+            throw IOException("نسخه داخل فایل با نسخه انتشار GitHub مطابقت ندارد.")
+        }
+
+        val archiveCode = if (Build.VERSION.SDK_INT >= 28) {
+            archive.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            archive.versionCode.toLong()
+        }
+        if (archiveCode % BUILD_NUMBER_MODULUS != info.buildNumber) {
+            throw IOException("شماره بیلد فایل APK با انتشار جدید مطابقت ندارد.")
+        }
+
+        val installedInfo = context.packageManager.getPackageInfo(context.packageName, flags)
+        val installedSigners = signingCertificateDigests(installedInfo)
+        val downloadedSigners = signingCertificateDigests(archive)
+        if (installedSigners.isEmpty() || downloadedSigners.isEmpty() ||
+            installedSigners != downloadedSigners
+        ) {
+            throw IOException(
+                "امضای این APK با نسخه نصب‌شده متفاوت است. برای به‌روزرسانی مستقیم، " +
+                    "نسخه‌ها باید با یک کلید امضای ثابت ساخته شوند."
+            )
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun signingCertificateDigests(packageInfo: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= 28) {
+            packageInfo.signingInfo?.apkContentsSigners?.toList().orEmpty()
+        } else {
+            packageInfo.signatures?.toList().orEmpty()
+        }
+        return signatures.map { signature ->
+            MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        }.toSet()
     }
 
     private fun configuredDownloadUrl(): String? {
