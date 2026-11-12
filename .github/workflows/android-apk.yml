@@ -46,7 +46,9 @@ jobs:
           echo "y" | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --channel=0 --install "ndk;30.0.16248370"
           echo "NDK_HOME=$ANDROID_HOME/ndk/30.0.16248370" >> "$GITHUB_ENV"
 
-      - name: Apply Moghimi branding and cloud sync
+      - name: Apply Moghimi branding, cloud sync and updater
+        env:
+          MOGHIMI_VERSION_CODE: ${{ github.run_number }}
         run: bash android/patch-upstream.sh
 
       - name: Build native TUN helper
@@ -74,12 +76,12 @@ jobs:
           fileName: "libv2ray.aar"
           out-file-path: "android/upstream/V2rayNG/app/libs"
 
-      - name: Run unit tests and build installable beta APKs
+      - name: Run unit tests and build the ARM64 beta APK
         working-directory: android/upstream/V2rayNG
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
-          ./gradlew testPlaystoreDebugUnitTest assemblePlaystoreDebug --stacktrace
+          ./gradlew testPlaystoreDebugUnitTest assemblePlaystoreDebug -PABI_FILTERS=arm64-v8a --stacktrace
 
       - name: Generate APK checksums
         shell: bash
@@ -89,7 +91,7 @@ jobs:
             | xargs -0 -r sha256sum > release-files/SHA256SUMS
           cp android/upstream/V2rayNG/app/build/outputs/apk/playstore/debug/*.apk release-files/
 
-      - name: Upload APKs and checksums
+      - name: Upload ARM64 APK and checksum
         uses: actions/upload-artifact@v4
         with:
           name: Moghimi-V2Ray-Android-Beta
@@ -97,7 +99,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Publish public beta release
+      - name: Publish public ARM64 beta release
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
@@ -118,6 +120,6 @@ jobs:
             echo ""
             echo "- Source: pinned v2rayNG/Xray checkout"
             echo "- App package: ir.moghimi.v2ray"
-            echo "- Version: 1.0.0 (beta)"
+            echo "- Version: 1.0.0 (build ${{ github.run_number }}, ARM64 only)"
             echo "- APK architecture variants are listed in the Artifacts section when the build succeeds."
           } >> "$GITHUB_STEP_SUMMARY"

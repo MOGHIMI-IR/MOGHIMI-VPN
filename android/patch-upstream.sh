@@ -39,7 +39,7 @@ gradle = app / "build.gradle.kts"
 source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
-    ("versionCode = 755", "versionCode = 1", "versionCode"),
+    ("versionCode = 755", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
     ('versionName = "2.3.15"', 'versionName = "1.0.0"', "versionName"),
 ]:
     if source.count(old) != 1:
@@ -222,6 +222,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import com.v2ray.ang.R
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -244,7 +246,7 @@ replace_once(
     """                ) {
                     if (groups.size > 1) {""",
     """                ) {
-                    MoghimiBrandBanner()
+                    MoghimiBrandBanner(isRunning = isRunning)
                     if (groups.size > 1) {""",
     "brand banner in server view"
 )
@@ -260,7 +262,7 @@ replace_once(
                         .padding(top = innerPadding.calculateTopPadding()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    MoghimiBrandBanner()
+                    MoghimiBrandBanner(isRunning = isRunning)
                     Text(
                         text = androidx.compose.ui.res.stringResource(R.string.moghimi_empty_title),
                         color = MaterialTheme.colorScheme.onSurface,
@@ -285,57 +287,79 @@ main_screen = main_screen_file.read_text(encoding="utf-8").rstrip()
 main_screen += """
 
 @Composable
-private fun MoghimiBrandBanner() {
+private fun MoghimiBrandBanner(isRunning: Boolean) {
+    val statusColor = if (isRunning) Color(0xFF63DDB6) else Color(0xFFFFD84D)
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
+        shape = RoundedCornerShape(25.dp),
+        color = Color.Transparent,
+        shadowElevation = 9.dp
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(
+                            Color(0xFF101D38),
+                            Color(0xFF20234D),
+                            Color(0xFF39265B)
+                        )
+                    )
+                )
+                .padding(horizontal = 16.dp, vertical = 15.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(MaterialTheme.colorScheme.primary),
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFFFFD84D)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "MG",
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 15.sp
+                    color = Color(0xFF10172A),
+                    fontWeight = FontWeight.Black,
+                    fontSize = 16.sp
                 )
             }
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(13.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "MOGHIMI V2RAY",
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = Color(0xFFFFFFFF),
                     style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.ExtraBold
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.1.sp
                 )
                 Text(
-                    text = "اتصال امن • مدیریت کانفیگ‌ها",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = "سرویس‌های اختصاصی مقیمی",
+                    color = Color(0xFFC7D2FE),
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            Text(
-                text = "X",
-                color = MaterialTheme.colorScheme.secondary,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.ExtraBold
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = if (isRunning) "CONNECTED" else "READY",
+                    color = statusColor,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.ExtraBold
+                )
+                Text(
+                    text = if (isRunning) "اتصال برقرار است" else "آماده اتصال",
+                    color = Color(0xFFE4E8F7),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
     }
 }
 """
 main_screen_file.write_text(main_screen, encoding="utf-8")
+
 
 # Automatic cloud sync at app launch, manually from toolbar, and periodically in background.
 main_activity_file = java / "ui/main/MainActivity.kt"
@@ -372,7 +396,7 @@ replace_once(
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}""",
     """        mainViewModel.onAction(MainAction.Initialize)
         scheduleMoghimiBackgroundSync()
-        syncMoghimiConfigs(autoSelect = false, silent = true)
+        syncMoghimiConfigs(autoSelect = true, silent = true)
 
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}""",
     "startup cloud sync"
@@ -421,7 +445,7 @@ methods = """    private fun scheduleMoghimiBackgroundSync() {
                     MoghimiCloudSync.sync()
                 }
                 mainViewModel.setupGroupTab(forceRefresh = true).join()
-                if (autoSelect) {
+                if (autoSelect && result.importedProfiles > 0) {
                     mainViewModel.onAction(
                         MainAction.SelectGroup(MoghimiCloudSync.CLOUD_GROUP_ID)
                     )
@@ -493,5 +517,7 @@ launcher.write_text(
 
 print("Moghimi branding and cloud sync patch applied.")
 PY
+
+python3 "$ROOT/android/patch-updater.py" "$PROJECT"
 
 echo "Prepared branded Android source under $PROJECT"
