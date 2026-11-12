@@ -34,7 +34,7 @@ object MoghimiUpdateManager {
     const val ARM64_APK_URL = ""
 
     private const val RELEASES_API =
-        "https://api.github.com/repos/MOGHIMI-IR/MOGHIMI-VPN/releases?per_page=1"
+        "https://api.github.com/repos/MOGHIMI-IR/MOGHIMI-VPN/releases?per_page=100"
     private const val APK_ASSET_NAME = "MoghimiV2Ray_1.0.0_arm64-v8a.apk"
     private const val BUILD_NUMBER_MODULUS = 1_000_000L
     private const val MAX_APK_SIZE_BYTES = 160L * 1024L * 1024L
@@ -65,18 +65,30 @@ object MoghimiUpdateManager {
             accept = "application/vnd.github+json"
         )
         val releases = JSONArray(response)
-        val release = releases.optJSONObject(0) ?: return null
-        if (release.optBoolean("draft", false)) return null
-
-        val tagName = release.optString("tag_name")
-        val buildNumber = Regex(
+        val buildTagPattern = Regex(
             "^moghimi-beta-([0-9]+)$",
             RegexOption.IGNORE_CASE
-        ).find(tagName)?.groupValues?.getOrNull(1)?.toLongOrNull() ?: return null
+        )
+        var release: JSONObject? = null
+        var buildNumber = -1L
 
+        // GitHub's release listing is ordered by creation date, which can differ from
+        // our CI build number. Always select the numerically newest published Moghimi build.
+        for (index in 0 until releases.length()) {
+            val candidate = releases.optJSONObject(index) ?: continue
+            if (candidate.optBoolean("draft", false)) continue
+            val candidateBuild = buildTagPattern.find(candidate.optString("tag_name"))
+                ?.groupValues?.getOrNull(1)?.toLongOrNull() ?: continue
+            if (candidateBuild > buildNumber) {
+                buildNumber = candidateBuild
+                release = candidate
+            }
+        }
+
+        val latestRelease = release ?: return null
         if (buildNumber <= installedBuildNumber(context)) return null
 
-        val assets = release.optJSONArray("assets")
+        val assets = latestRelease.optJSONArray("assets")
             ?: throw IOException("فهرست فایل‌های انتشار در دسترس نیست.")
         val apkAsset = findAsset(assets, APK_ASSET_NAME)
             ?: throw IOException("فایل ARM64 در انتشار جدید پیدا نشد.")
@@ -86,7 +98,7 @@ object MoghimiUpdateManager {
             throw IOException("مقدار SHA-256 نسخه جدید معتبر نیست.")
         }
 
-        val rawNotes = release.optString("body").trim()
+        val rawNotes = latestRelease.optString("body").trim()
         val notes = rawNotes.ifBlank {
             "بهبودها و رفع اشکال‌های نسخه جدید Moghimi V2Ray."
         }.take(700)
@@ -96,10 +108,10 @@ object MoghimiUpdateManager {
             versionName = APK_ASSET_NAME
                 .removePrefix("MoghimiV2Ray_")
                 .removeSuffix("_arm64-v8a.apk"),
-            tagName = tagName,
+            tagName = latestRelease.optString("tag_name"),
             sha256 = checksum,
             releaseNotes = notes,
-            releaseUrl = release.optString("html_url")
+            releaseUrl = latestRelease.optString("html_url")
         )
     }
 
