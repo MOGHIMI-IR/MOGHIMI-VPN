@@ -38,7 +38,7 @@ fun MoghimiHomeHeader(
     onCloudSyncClick: () -> Unit
 ) {
     val statusColor = if (isRunning) Color(0xFF55E0B3) else Color(0xFFFFD76A)
-    val statusText = if (isRunning) "متصل" else "آماده اتصال"
+    val statusText = if (isRunning) "متصل" else "قطع"
 
     Surface(
         modifier = Modifier
@@ -69,7 +69,7 @@ fun MoghimiHomeHeader(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "مقیمی وی‌پی‌ان",
+                            text = "مقیمیv2ray",
                             color = Color.White,
                             fontSize = 23.sp,
                             fontWeight = FontWeight.Black

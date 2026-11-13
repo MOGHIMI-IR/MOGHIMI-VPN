@@ -87,6 +87,9 @@ signing_block = """    val moghimiStoreFile = System.getenv("MOGHIMI_SIGNING_STO
             getByName("debug") {
                 signingConfig = signingConfigs.getByName("moghimiStable")
             }
+            getByName("release") {
+                signingConfig = signingConfigs.getByName("moghimiStable")
+            }
         }
     }
 
@@ -260,7 +263,7 @@ default_strings = res / "values/strings.xml"
 replace_once(
     default_strings,
     '<string name="app_name" translatable="false">v2rayNG</string>',
-    '<string name="app_name" translatable="false">مقیمی وی‌پی‌ان</string>',
+    '<string name="app_name" translatable="false">Moghimi V2Ray</string>',
     "default app name"
 )
 replace_once(
@@ -274,7 +277,7 @@ fa_strings = res / "values-fa/strings.xml"
 fa_text = fa_strings.read_text(encoding="utf-8")
 fa_text = fa_text.replace(
     '<string name="app_name" translatable="false">v2rayNG</string>',
-    '<string name="app_name" translatable="false">مقیمی وی‌پی‌ان</string>',
+    '<string name="app_name" translatable="false">Moghimi V2Ray</string>',
     1
 )
 fa_text = fa_text.replace(

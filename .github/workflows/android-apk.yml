@@ -98,28 +98,49 @@ jobs:
           fileName: "libv2ray.aar"
           out-file-path: "android/upstream/V2rayNG/app/libs"
 
-      - name: Run unit tests and build the ARM64 beta APK
+      - name: Run unit tests and build the ARM64 release APK
         working-directory: android/upstream/V2rayNG
         env:
+          MOGHIMI_VERSION_CODE: ${{ github.run_number }}
           MOGHIMI_SIGNING_STORE_PASSWORD: ${{ secrets.MOGHIMI_SIGNING_STORE_PASSWORD }}
           MOGHIMI_SIGNING_KEY_ALIAS: ${{ secrets.MOGHIMI_SIGNING_KEY_ALIAS }}
           MOGHIMI_SIGNING_KEY_PASSWORD: ${{ secrets.MOGHIMI_SIGNING_KEY_PASSWORD }}
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew
-          ./gradlew testPlaystoreDebugUnitTest assemblePlaystoreDebug -PABI_FILTERS=arm64-v8a --stacktrace
+          ./gradlew testPlaystoreReleaseUnitTest assemblePlaystoreRelease -PABI_FILTERS=arm64-v8a --stacktrace
 
       - name: Generate APK checksums
         shell: bash
         run: |
           mkdir -p release-files
-          find android/upstream/V2rayNG/app/build/outputs/apk/playstore/debug -maxdepth 1 -type f -name '*.apk' -print0 \
-            | xargs -0 -r sha256sum > release-files/SHA256SUMS
-          cp android/upstream/V2rayNG/app/build/outputs/apk/playstore/debug/*.apk release-files/
-          APK="$(find android/upstream/V2rayNG/app/build/outputs/apk/playstore/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
-          test -n "$APK"
+          APK_DIR="android/upstream/V2rayNG/app/build/outputs/apk/playstore/release"
+          APK="$APK_DIR/MoghimiV2Ray_1.0.3_arm64-v8a.apk"
+          test -s "$APK"
+
+          # Verify the actual packaged version code. Playstore ARM64 outputs use a
+          # 4,000,000 ABI offset; the remainder must equal this CI run number.
+          EXPECTED_VERSION_CODE="$((4000000 + GITHUB_RUN_NUMBER))"
+          BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
+          grep -F "package: name='ir.moghimi.v2ray'" <<< "$BADGING" >/dev/null
+          grep -F "versionCode='$EXPECTED_VERSION_CODE' versionName='1.0.3'" <<< "$BADGING" >/dev/null || {
+            echo "::error::APK versionCode mismatch. Expected $EXPECTED_VERSION_CODE for build $GITHUB_RUN_NUMBER."
+            exit 1
+          }
+          if grep -q '^application-debuggable$' <<< "$BADGING"; then
+            echo "::error::A debuggable APK cannot be published as the production release."
+            exit 1
+          fi
+
+          sha256sum "$APK" > release-files/SHA256SUMS
+          cp "$APK" release-files/
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$APK" > release-files/SIGNING.txt
           echo "Signing mode: ${MOGHIMI_SIGNING_MODE:-debug-fallback}" >> release-files/SIGNING.txt
+          grep -Eiq "certificate SHA-256 digest: 34996e2abdb1705849dd11963fb8cae2a6936ca0237cf44bc2bfe59978da5cdf" release-files/SIGNING.txt || {
+            echo "::error::APK does not use the previously established Moghimi stable signing certificate."
+            exit 1
+          }
+          test "${MOGHIMI_SIGNING_MODE:-}" = "stable"
 
       - name: Upload ARM64 APK and checksum
         uses: actions/upload-artifact@v4

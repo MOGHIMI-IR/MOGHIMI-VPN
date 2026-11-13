@@ -1,5 +1,7 @@
 package com.v2ray.ang.ui.main
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -40,6 +42,7 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +60,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -69,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.R
+import kotlinx.coroutines.delay
 
 @Composable
 fun MoghimiRootScreen(
@@ -185,6 +190,28 @@ private fun MoghimiConnectionPage(
     val selectedGroup by selectedGroupFlow.collectAsStateWithLifecycle()
     val selectedServer = selectedGroup.rows.firstOrNull { it.guid == uiState.selectedGuid }
     val running = uiState.isRunning
+    val measuredPingMillis =
+        (uiState.status as? MainStatus.ConnectionTest)?.result?.delayMillis
+    val pingStatusText = when {
+        !running || selectedServer == null -> "—"
+        uiState.isTesting -> "در حال سنجش"
+        measuredPingMillis == null -> "در انتظار"
+        measuredPingMillis >= 0L -> "$measuredPingMillis ms"
+        else -> "ناموفق"
+    }
+
+    // Read the current tunnel's real latency, not the saved profile TCP test.
+    // Re-check after connecting and every 30 seconds while the tunnel stays active.
+    LaunchedEffect(running, selectedServer?.guid) {
+        if (!running || selectedServer == null) return@LaunchedEffect
+        delay(1_200L)
+        while (true) {
+            if (!mainViewModel.uiState.value.isTesting) {
+                mainViewModel.testCurrentServerRealPing()
+            }
+            delay(30_000L)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -199,7 +226,7 @@ private fun MoghimiConnectionPage(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "مقیمی وی‌پی‌ان",
+                    text = "مقیمیv2ray",
                     color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 23.sp,
                     fontWeight = FontWeight.ExtraBold
@@ -254,12 +281,33 @@ private fun MoghimiConnectionPage(
                         fontSize = 11.sp
                     )
                 }
-                Text(
-                    text = if (running) "فعال" else "آماده",
-                    color = if (running) Color(0xFF50E0B5) else Color(0xFFFFD34D),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(enabled = running && !uiState.isTesting) {
+                            mainViewModel.testCurrentServerRealPing()
+                        }
+                        .padding(start = 8.dp, top = 3.dp, bottom = 3.dp)
+                ) {
+                    Text(
+                        text = "پینگ واقعی",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = pingStatusText,
+                        color = when {
+                            !running -> MaterialTheme.colorScheme.onSurfaceVariant
+                            measuredPingMillis != null && measuredPingMillis >= 0L ->
+                                Color(0xFF50E0B5)
+                            else -> Color(0xFFFFD34D)
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 
@@ -277,7 +325,7 @@ private fun MoghimiConnectionPage(
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = if (running) "برای پایان ارتباط، دکمهٔ مرکزی را لمس کنید" else "هستهٔ Xray با تنظیمات کانفیگ انتخابی اجرا می‌شود",
+            text = if (running) "برای پایان ارتباط، دکمهٔ مرکزی را لمس کنید" else "با انتخاب کانفیگ، اتصال خود را آغاز کن",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
         )
@@ -359,12 +407,6 @@ private fun MoghimiConnectionPage(
             }
         }
 
-        Spacer(Modifier.height(15.dp))
-        Text(
-            text = "نسخهٔ اختصاصی مقیمی • مبتنی بر Xray",
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            fontSize = 10.sp
-        )
         Spacer(Modifier.height(10.dp))
     }
 }
@@ -512,6 +554,7 @@ private data class MoghimiSettingShortcut(
 private fun MoghimiSettingsPage(
     onNavigate: (MainDestination) -> Unit
 ) {
+    val context = LocalContext.current
     val shortcuts = listOf(
         MoghimiSettingShortcut("تنظیمات برنامه", "ظاهر، زبان و رفتار برنامه", MainDestination.Settings),
         MoghimiSettingShortcut("اشتراک‌ها", "مدیریت و به‌روزرسانی اشتراک‌ها", MainDestination.Subscriptions),
@@ -520,7 +563,7 @@ private fun MoghimiSettingsPage(
         MoghimiSettingShortcut("پشتیبان‌گیری و بازیابی", "ذخیره یا بازگرداندن اطلاعات", MainDestination.BackupRestore),
         MoghimiSettingShortcut("گزارش اتصال", "بررسی رخدادها و خطاهای برنامه", MainDestination.Logcat),
         MoghimiSettingShortcut("بررسی به‌روزرسانی", "مشاهدهٔ نسخه‌های جدید", MainDestination.CheckUpdate),
-        MoghimiSettingShortcut("دربارهٔ برنامه", "اطلاعات Moghimi VPN و مجوزها", MainDestination.About)
+        MoghimiSettingShortcut("دربارهٔ برنامه", "اطلاعات مقیمیv2ray و مجوزها", MainDestination.About)
     )
 
     Column(
@@ -536,7 +579,7 @@ private fun MoghimiSettingsPage(
             fontWeight = FontWeight.ExtraBold
         )
         Text(
-            text = "مدیریت بخش‌های مختلف مقیمی وی‌پی‌ان",
+            text = "مدیریت بخش‌های مختلف مقیمیv2ray",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp, bottom = 18.dp)
@@ -606,7 +649,71 @@ private fun MoghimiSettingsPage(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 25.sp
                     )
+                 }
+            }
+        }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, bottom = 10.dp)
+                .clickable {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://t.me/Moghimi_v2ray")
+                            )
+                        )
+                    }
+                },
+            shape = RoundedCornerShape(19.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 15.dp, vertical = 15.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    modifier = Modifier.size(43.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "✈",
+                            color = MaterialTheme.colorScheme.secondary,
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 13.dp)
+                ) {
+                    Text(
+                        text = "کانال تلگرام مقیمی",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = "@Moghimi_v2ray",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
+                }
+                Text(
+                    text = "‹",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 25.sp
+                )
             }
         }
     }
