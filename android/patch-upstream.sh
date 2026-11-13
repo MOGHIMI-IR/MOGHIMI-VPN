@@ -46,7 +46,7 @@ source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
     ("versionCode = 755", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
-    ('versionName = "2.3.15"', 'versionName = "1.0.4"', "versionName"),
+    ('versionName = "2.3.15"', 'versionName = "1.0.5"', "versionName"),
 ]:
     if source.count(old) != 1:
         raise SystemExit(f"Expected one Gradle match for {label}")
@@ -636,7 +636,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 )
 activity = activity.replace(
     "class MainActivity : HelperBaseComponentActivity() {\n",
-    "class MainActivity : HelperBaseComponentActivity() {\n\n    private var moghimiSyncRunning = false\n",
+    "class MainActivity : HelperBaseComponentActivity() {\n\n    private var moghimiSyncRunning = false\n    private var bestServerScanRunning = false\n",
     1
 )
 main_activity_file.write_text(activity, encoding="utf-8")
@@ -865,7 +865,7 @@ if "import kotlinx.coroutines.withTimeoutOrNull\n" not in view_model:
 replace_once(
     view_model_file,
     "    private var bulkTestJob: Job? = null\n",
-    "    private var bulkTestJob: Job? = null\n    private var autoBestConfigJob: Job? = null\n",
+    "    private var bulkTestJob: Job? = null\n    private var autoBestConfigJob: Job? = null\n    private var pendingBestConfigCallback: ((Boolean) -> Unit)? = null\n",
     "startup best-config job state"
 )
 
@@ -1105,9 +1105,6 @@ replace_once(
 
     private fun shareToClipboard(guid: String): Boolean =""",
     """                moghimiSyncRunning = false
-                if (autoSelect) {
-                    mainViewModel.autoTestAllConfigsAndSelectBest()
-                }
             }
         }
     }
