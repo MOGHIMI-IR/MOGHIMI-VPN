@@ -123,11 +123,27 @@ jobs:
           EXPECTED_VERSION_CODE="$((4000000 + GITHUB_RUN_NUMBER))"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
           grep -F "package: name='ir.moghimi.v2ray'" <<< "$BADGING" >/dev/null
-          grep -F "versionCode='$EXPECTED_VERSION_CODE' versionName='1.0.3'" <<< "$BADGING" >/dev/null || {
+          grep -F "versionCode='$EXPECTED_VERSION_CODE' versionName='1.0.4'" <<< "$BADGING" >/dev/null || {
             echo "::error::APK versionCode mismatch. Expected $EXPECTED_VERSION_CODE for build $GITHUB_RUN_NUMBER."
             exit 1
           }
-          if grep -q '^application-debuggable
+          if grep -q '^application-debuggable$' <<< "$BADGING"; then
+            echo "::error::A debuggable APK cannot be published as the production release."
+            exit 1
+          fi
+
+          # Confirm the VPN APK does not request broad package inventory or
+          # the ability to install APKs itself.
+          PERMISSIONS="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump permissions "$APK")"
+          for FORBIDDEN_PERMISSION in \
+            android.permission.REQUEST_INSTALL_PACKAGES \
+            android.permission.QUERY_ALL_PACKAGES; do
+            if grep -Fq "$FORBIDDEN_PERMISSION" <<< "$PERMISSIONS"; then
+              echo "::error::Unnecessary high-risk permission found in APK: $FORBIDDEN_PERMISSION"
+              exit 1
+            fi
+          done
+
           sha256sum "$APK" > release-files/SHA256SUMS
           cp "$APK" release-files/
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$APK" > release-files/SIGNING.txt
