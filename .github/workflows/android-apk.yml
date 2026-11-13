@@ -115,7 +115,7 @@ jobs:
         run: |
           mkdir -p release-files
           APK_DIR="android/upstream/V2rayNG/app/build/outputs/apk/playstore/release"
-          APK="$APK_DIR/MoghimiV2Ray_1.0.4_arm64-v8a.apk"
+          APK="$APK_DIR/MoghimiV2Ray_1.0.5_arm64-v8a.apk"
           test -s "$APK"
 
           # Verify the actual packaged version code. Playstore ARM64 outputs use a
@@ -123,7 +123,7 @@ jobs:
           EXPECTED_VERSION_CODE="$((4000000 + GITHUB_RUN_NUMBER))"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
           grep -F "package: name='ir.moghimi.v2ray'" <<< "$BADGING" >/dev/null
-          grep -F "versionCode='$EXPECTED_VERSION_CODE' versionName='1.0.4'" <<< "$BADGING" >/dev/null || {
+          grep -F "versionCode='$EXPECTED_VERSION_CODE' versionName='1.0.5'" <<< "$BADGING" >/dev/null || {
             echo "::error::APK versionCode mismatch. Expected $EXPECTED_VERSION_CODE for build $GITHUB_RUN_NUMBER."
             exit 1
           }
@@ -187,7 +187,7 @@ jobs:
             exit 0
           fi
 
-          APK="release-files/MoghimiV2Ray_1.0.4_arm64-v8a.apk"
+          APK="release-files/MoghimiV2Ray_1.0.5_arm64-v8a.apk"
           test -s "$APK"
           OBJECT_URL="https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20%281%29.apk"
           PUBLIC_URL="https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20%281%29.apk"
@@ -230,7 +230,7 @@ jobs:
             echo ""
             echo "- Source: pinned v2rayNG/Xray checkout"
             echo "- App package: ir.moghimi.v2ray"
-            echo "- Version: 1.0.4 (build ${{ github.run_number }}, ARM64 only)"
+            echo "- Version: 1.0.5 (build ${{ github.run_number }}, ARM64 only)"
             echo "- Signing mode: ${MOGHIMI_SIGNING_MODE:-debug-fallback}"
             echo "- Supabase sync: ${{ steps.supabase.outputs.status }}"
             echo "- APK architecture variants are listed in the Artifacts section when the build succeeds."
