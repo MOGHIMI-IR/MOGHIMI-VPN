@@ -23,11 +23,12 @@ import java.security.MessageDigest
 import java.util.Locale
 
 /**
- * Checks the Moghimi V2Ray GitHub release feed and downloads only the ARM64 APK
- * from the configured Supabase Storage object.
+ * Checks the Moghimi V2Ray GitHub release feed and downloads the matching ARM64 APK.
  *
- * GitHub is used for release metadata and the published SHA-256 digest only.
- * The APK binary itself is always fetched from the HTTPS Supabase URL below.
+ * Supabase Storage remains the preferred download source. If its fixed public object is
+ * stale or unavailable, the exact APK asset from the same GitHub release is used as a
+ * verified fallback. Both paths must pass the same SHA-256, package, version, build and
+ * installed-signature checks before Android's installer is opened.
  */
 object MoghimiUpdateManager {
     const val EXTRA_OPEN_UPDATE = "com.v2ray.ang.extra.OPEN_MOGHIMI_UPDATE"
@@ -49,6 +50,7 @@ object MoghimiUpdateManager {
         val tagName: String,
         val sha256: String,
         val apkAssetName: String,
+        val githubApkUrl: String,
         val releaseNotes: String,
         val releaseUrl: String
     )
@@ -95,6 +97,9 @@ object MoghimiUpdateManager {
         val apkAsset = assetInfo.first
         val apkAssetName = assetInfo.second
         val versionName = assetInfo.third
+        val githubApkUrl = validateGithubApkUrl(
+            apkAsset.optString("browser_download_url")
+        )
 
         val checksum = resolveChecksum(apkAsset, assets, apkAssetName)
         if (!checksum.matches(Regex("^[0-9a-f]{64}$"))) {
@@ -112,6 +117,7 @@ object MoghimiUpdateManager {
             tagName = latestRelease.optString("tag_name"),
             sha256 = checksum,
             apkAssetName = apkAssetName,
+            githubApkUrl = githubApkUrl,
             releaseNotes = notes,
             releaseUrl = latestRelease.optString("html_url")
         )
@@ -208,20 +214,65 @@ object MoghimiUpdateManager {
      * Downloads the configured Supabase object, verifies it against the digest published
      * by the corresponding GitHub release, and returns a file in app-private cache.
      */
+    /**
+     * Prefer the configured Supabase object, but fall back to the exact GitHub release
+     * asset if Supabase is unavailable or its contents do not match the release digest.
+     * A file is returned only after all APK, version and signer checks pass.
+     */
     fun downloadArm64Apk(
         context: Context,
         info: UpdateInfo,
         onProgress: (Int) -> Unit
     ): File {
-        val downloadUrl = configuredDownloadUrl()
-            ?: throw IOException("لینک دانلود ARM64 سوپابیس هنوز تنظیم نشده است.")
+        val downloadSources = buildList {
+            configuredDownloadUrl()?.let { add("سوپابیس" to it) }
+            add("گیت‌هاب" to info.githubApkUrl)
+        }
 
+        var lastFailure: IOException? = null
+        downloadSources.forEachIndexed { index, source ->
+            try {
+                val downloaded = downloadAndVerifyFromUrl(
+                    context = context,
+                    info = info,
+                    downloadUrl = source.second,
+                    sourceName = source.first,
+                    onProgress = onProgress
+                )
+                onProgress(100)
+                return downloaded
+            } catch (error: IOException) {
+                lastFailure = error
+                if (index < downloadSources.lastIndex) {
+                    // Reset the progress bar before trying the fallback source.
+                    onProgress(0)
+                }
+            }
+        }
+
+        throw IOException(
+            "دریافت نسخه از سوپابیس و گیت‌هاب ناموفق بود: " +
+                (lastFailure?.localizedMessage ?: "خطای ناشناخته"),
+            lastFailure
+        )
+    }
+
+    private fun downloadAndVerifyFromUrl(
+        context: Context,
+        info: UpdateInfo,
+        downloadUrl: String,
+        sourceName: String,
+        onProgress: (Int) -> Unit
+    ): File {
         val connection = (URL(downloadUrl).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 20_000
             readTimeout = 60_000
             instanceFollowRedirects = true
-            setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream")
+            setRequestProperty(
+                "Accept",
+                "application/vnd.android.package-archive, application/octet-stream"
+            )
             setRequestProperty("User-Agent", "MoghimiV2Ray-Android-Updater")
         }
 
@@ -238,12 +289,14 @@ object MoghimiUpdateManager {
         try {
             val status = connection.responseCode
             if (status !in 200..299) {
-                throw IOException("دریافت فایل از سوپابیس ناموفق بود (HTTP " + status + ").")
+                throw IOException(
+                    "دریافت فایل از " + sourceName + " ناموفق بود (HTTP " + status + ")."
+                )
             }
 
             val contentType = connection.contentType.orEmpty().lowercase(Locale.US)
             if (contentType.contains("text/html") || contentType.contains("application/json")) {
-                throw IOException("سوپابیس به‌جای فایل APK، محتوای نامعتبر برگرداند.")
+                throw IOException("سرویس " + sourceName + " به‌جای APK محتوای نامعتبر برگرداند.")
             }
 
             val expectedLength = connection.contentLengthLong
@@ -289,7 +342,10 @@ object MoghimiUpdateManager {
                 "%02x".format(it.toInt() and 0xff)
             }
             if (!actualDigest.equals(info.sha256, ignoreCase = true)) {
-                throw IOException("بررسی سلامت فایل ناموفق بود؛ فایل سوپابیس با انتشار جدید یکسان نیست.")
+                throw IOException(
+                    "فایل دریافتی از " + sourceName +
+                        " با انتشار GitHub یکسان نیست؛ دریافت از منبع بعدی امتحان می‌شود."
+                )
             }
 
             if (finalFile.exists() && !finalFile.delete()) {
@@ -301,16 +357,15 @@ object MoghimiUpdateManager {
             }
 
             verifyDownloadedApk(context, info, finalFile)
-            onProgress(100)
             return finalFile
         } catch (error: Exception) {
             partialFile.delete()
-            throw error
+            if (error is IOException) throw error
+            throw IOException("بررسی فایل دریافتی از " + sourceName + " ناموفق بود.", error)
         } finally {
             connection.disconnect()
         }
     }
-
 
     /**
      * Validate the file before opening Android's installer. The SHA-256 check is performed
@@ -369,6 +424,16 @@ object MoghimiUpdateManager {
         }.toSet()
     }
 
+    private fun validateGithubApkUrl(value: String): String {
+        val parsed = runCatching { java.net.URI(value) }.getOrNull()
+            ?: throw IOException("نشانی فایل APK در انتشار GitHub معتبر نیست.")
+        if (!parsed.scheme.equals("https", ignoreCase = true) ||
+            !parsed.host.equals("github.com", ignoreCase = true)
+        ) {
+            throw IOException("نشانی جایگزین APK باید از دامنه رسمی GitHub باشد.")
+        }
+        return value
+    }
     private fun configuredDownloadUrl(): String? {
         val value = ARM64_APK_URL.trim()
         if (value.isBlank()) return null
