@@ -17,6 +17,11 @@ mkdir -p "$JAVA"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/MoghimiCloudSync.kt" "$JAVA/MoghimiCloudSync.kt"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/MoghimiSyncWorker.kt" "$JAVA/MoghimiSyncWorker.kt"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiHomeHeader.kt" "$JAVA/ui/main/MoghimiHomeHeader.kt"
+cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiDashboard.kt" "$JAVA/ui/main/MoghimiDashboard.kt"
+mkdir -p "$RES/font" "$RES/drawable" "$RES/drawable-nodpi"
+cp "$ROOT/android/src/main/res/font/tanha.ttf" "$RES/font/tanha.ttf"
+cp "$ROOT/android/src/main/res/drawable-nodpi/moghimi_logo.webp" "$RES/drawable-nodpi/moghimi_logo.webp"
+cp "$ROOT"/android/src/main/res/drawable/*.xml "$RES/drawable/"
 
 python3 - "$PROJECT" <<'PY'
 from pathlib import Path
@@ -41,7 +46,7 @@ source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
     ("versionCode = 755", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
-    ('versionName = "2.3.15"', 'versionName = "1.0.0"', "versionName"),
+    ('versionName = "2.3.15"', 'versionName = "1.0.3"', "versionName"),
 ]:
     if source.count(old) != 1:
         raise SystemExit(f"Expected one Gradle match for {label}")
@@ -148,20 +153,89 @@ theme = theme.replace("val colorPingRed = Color(0xFFFF0099)", "val colorPingRed 
 theme = theme.replace("val colorConfigType = Color(0xFFf97910)", "val colorConfigType = Color(0xFFA98BFF)")
 theme = theme.replace("val colorFabActive = Color(0xFFf97910)", "val colorFabActive = Color(0xFFFFD84D)")
 theme = theme.replace("val dividerColorDark = Color(0xFF424242)", "val dividerColorDark = Color(0xFF334363)")
+font_imports = """import androidx.compose.material3.Typography
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+"""
+if "import androidx.compose.ui.text.font.FontFamily" not in theme:
+    theme = theme.replace(
+        "import androidx.compose.material3.MaterialTheme\n",
+        "import androidx.compose.material3.MaterialTheme\n" + font_imports,
+        1
+    )
+    if "import com.v2ray.ang.R" not in theme:
+        theme = theme.replace(
+            "import com.v2ray.ang.AppConfig\n",
+            "import com.v2ray.ang.AppConfig\nimport com.v2ray.ang.R\n",
+            1
+        )
+
+tanha_typography = """
+private val TanhaFontFamily = FontFamily(
+    Font(R.font.tanha, FontWeight.Normal)
+)
+
+private val MoghimiTypography = Typography().let { base ->
+    base.copy(
+        displayLarge = base.displayLarge.copy(fontFamily = TanhaFontFamily),
+        displayMedium = base.displayMedium.copy(fontFamily = TanhaFontFamily),
+        displaySmall = base.displaySmall.copy(fontFamily = TanhaFontFamily),
+        headlineLarge = base.headlineLarge.copy(fontFamily = TanhaFontFamily),
+        headlineMedium = base.headlineMedium.copy(fontFamily = TanhaFontFamily),
+        headlineSmall = base.headlineSmall.copy(fontFamily = TanhaFontFamily),
+        titleLarge = base.titleLarge.copy(fontFamily = TanhaFontFamily),
+        titleMedium = base.titleMedium.copy(fontFamily = TanhaFontFamily),
+        titleSmall = base.titleSmall.copy(fontFamily = TanhaFontFamily),
+        bodyLarge = base.bodyLarge.copy(fontFamily = TanhaFontFamily),
+        bodyMedium = base.bodyMedium.copy(fontFamily = TanhaFontFamily),
+        bodySmall = base.bodySmall.copy(fontFamily = TanhaFontFamily),
+        labelLarge = base.labelLarge.copy(fontFamily = TanhaFontFamily),
+        labelMedium = base.labelMedium.copy(fontFamily = TanhaFontFamily),
+        labelSmall = base.labelSmall.copy(fontFamily = TanhaFontFamily)
+    )
+}
+
+"""
+if "private val MoghimiTypography" not in theme:
+    theme = theme.replace("// Semantic Colors", tanha_typography + "// Semantic Colors", 1)
+theme = theme.replace(
+    """MaterialTheme(
+            colorScheme = colorScheme
+        )""",
+    """MaterialTheme(
+            colorScheme = colorScheme,
+            typography = MoghimiTypography
+        )""",
+    1
+)
 theme_file.write_text(theme, encoding="utf-8")
+
+# Apply the uploaded Moghimi emblem as the launcher icon.
+manifest = app / "src/main/AndroidManifest.xml"
+manifest_source = manifest.read_text(encoding="utf-8")
+old_icon = 'android:icon="@mipmap/ic_launcher"'
+if manifest_source.count(old_icon) != 1:
+    raise SystemExit("Expected one existing launcher icon attribute")
+manifest_source = manifest_source.replace(
+    old_icon,
+    'android:icon="@drawable/moghimi_logo"',
+    1
+)
+manifest.write_text(manifest_source, encoding="utf-8")
 
 # Brand the app labels in the default and Persian resources.
 default_strings = res / "values/strings.xml"
 replace_once(
     default_strings,
     '<string name="app_name" translatable="false">v2rayNG</string>',
-    '<string name="app_name" translatable="false">Moghimi V2Ray</string>',
+    '<string name="app_name" translatable="false">مقیمی وی‌پی‌ان</string>',
     "default app name"
 )
 replace_once(
     default_strings,
     '<string name="title_server">Config</string>',
-    '<string name="title_server">Moghimi V2Ray</string>',
+    '<string name="title_server">کانفیگ‌ها</string>',
     "default toolbar title"
 )
 
@@ -169,12 +243,12 @@ fa_strings = res / "values-fa/strings.xml"
 fa_text = fa_strings.read_text(encoding="utf-8")
 fa_text = fa_text.replace(
     '<string name="app_name" translatable="false">v2rayNG</string>',
-    '<string name="app_name" translatable="false">Moghimi V2Ray</string>',
+    '<string name="app_name" translatable="false">مقیمی وی‌پی‌ان</string>',
     1
 )
 fa_text = fa_text.replace(
     '<string name="title_server">فایل کانفیگ</string>',
-    '<string name="title_server">مقیمی V2Ray</string>',
+    '<string name="title_server">کانفیگ‌ها</string>',
     1
 )
 fa_text = fa_text.replace(
@@ -246,6 +320,16 @@ replace_once(
     "                    onMenuClick = { scope.launch { drawerState.open() } },\n                    onAction = onAction,",
     "                    onMenuClick = { scope.launch { drawerState.open() } },\n                    onCloudSyncClick = onCloudSyncClick,\n                    onAction = onAction,",
     "main screen toolbar binding"
+)
+
+replace_once(
+    main_screen_file,
+    """    onNavigate: (MainDestination) -> Unit,
+) {""",
+    """    onNavigate: (MainDestination) -> Unit,
+    showConnectionBar: Boolean = true,
+) {""",
+    "optional legacy connection bar"
 )
 
 # Add the compact branded header and empty state.
@@ -337,6 +421,31 @@ replace_once(
             MainBottomBar(
                 displayText = displayText,""",
     "empty state"
+)
+
+replace_once(
+    main_screen_file,
+    """            MainBottomBar(
+                displayText = displayText,
+                isRunning = isRunning,
+                isDarkTheme = isDarkTheme,
+                onAction = onAction,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .onSizeChanged { bottomBarHeightPx = it.height }
+            )""",
+    """            if (showConnectionBar) {
+                MainBottomBar(
+                    displayText = displayText,
+                    isRunning = isRunning,
+                    isDarkTheme = isDarkTheme,
+                    onAction = onAction,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .onSizeChanged { bottomBarHeightPx = it.height }
+                )
+            }""",
+    "conditional legacy connection bar"
 )
 
 main_screen = main_screen_file.read_text(encoding="utf-8").rstrip()

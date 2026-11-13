@@ -11,6 +11,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import com.v2ray.ang.R
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -65,42 +69,25 @@ fun MoghimiHomeHeader(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "MOGHIMI",
-                            color = Color(0xFFA9B8DC),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.4.sp
-                        )
-                        Text(
-                            text = "V2RAY",
+                            text = "مقیمی وی‌پی‌ان",
                             color = Color.White,
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 1.1.sp
+                            fontSize = 23.sp,
+                            fontWeight = FontWeight.Black
                         )
                         Text(
-                            text = "اتصال امن، ساده و سریع",
+                            text = "مدیریت کانفیگ‌ها و اتصال امن",
                             color = Color(0xFFD6DFF4),
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
-                    Box(
+                    Image(
+                        painter = painterResource(R.drawable.moghimi_logo),
+                        contentDescription = "نشان مقیمی",
                         modifier = Modifier
-                            .size(64.dp)
+                            .size(68.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF26385F))
-                            .border(1.dp, Color(0xFFFFD76A).copy(alpha = 0.78f), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "MG",
-                            color = Color(0xFFFFD76A),
-                            fontSize = 21.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 0.5.sp
-                        )
-                    }
+                    )
                 }
 
                 Row(

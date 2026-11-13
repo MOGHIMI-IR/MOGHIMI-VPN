@@ -357,4 +357,19 @@ if src.count(share_anchor) != 1:
     raise SystemExit("Expected one updater method insertion point in MainActivity")
 activity_file.write_text(src.replace(share_anchor, update_methods + share_anchor, 1), encoding="utf-8")
 
+# Use the new Persian-first three-tab dashboard as the app entry screen.
+# The callback body remains the original v2rayNG action router (VPN/service/import/edit handlers).
+replace_once(
+    activity_file,
+    """        MainScreen(
+            mainViewModel = mainViewModel,
+            onCloudSyncClick = { syncMoghimiConfigs(autoSelect = true, silent = false) },
+            onAction = { action ->""",
+    """        MoghimiRootScreen(
+            mainViewModel = mainViewModel,
+            onCloudSyncClick = { syncMoghimiConfigs(autoSelect = true, silent = false) },
+            onAction = { action ->""",
+    "Moghimi dashboard entry point"
+)
+
 print("Moghimi release updater patch applied.")

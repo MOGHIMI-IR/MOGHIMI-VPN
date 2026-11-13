@@ -35,7 +35,6 @@ object MoghimiUpdateManager {
 
     private const val RELEASES_API =
         "https://api.github.com/repos/MOGHIMI-IR/MOGHIMI-VPN/releases?per_page=100"
-    private const val APK_ASSET_NAME = "MoghimiV2Ray_1.0.0_arm64-v8a.apk"
     private const val BUILD_NUMBER_MODULUS = 1_000_000L
     private const val MAX_APK_SIZE_BYTES = 160L * 1024L * 1024L
     private const val PREFS_NAME = "moghimi_update_state"
@@ -49,6 +48,7 @@ object MoghimiUpdateManager {
         val versionName: String,
         val tagName: String,
         val sha256: String,
+        val apkAssetName: String,
         val releaseNotes: String,
         val releaseUrl: String
     )
@@ -90,10 +90,13 @@ object MoghimiUpdateManager {
 
         val assets = latestRelease.optJSONArray("assets")
             ?: throw IOException("فهرست فایل‌های انتشار در دسترس نیست.")
-        val apkAsset = findAsset(assets, APK_ASSET_NAME)
-            ?: throw IOException("فایل ARM64 در انتشار جدید پیدا نشد.")
+        val assetInfo = findArm64Asset(assets)
+            ?: throw IOException("فایل ARM64 با نام و نسخه معتبر در انتشار جدید پیدا نشد.")
+        val apkAsset = assetInfo.first
+        val apkAssetName = assetInfo.second
+        val versionName = assetInfo.third
 
-        val checksum = resolveChecksum(apkAsset, assets)
+        val checksum = resolveChecksum(apkAsset, assets, apkAssetName)
         if (!checksum.matches(Regex("^[0-9a-f]{64}$"))) {
             throw IOException("مقدار SHA-256 نسخه جدید معتبر نیست.")
         }
@@ -105,11 +108,10 @@ object MoghimiUpdateManager {
 
         return UpdateInfo(
             buildNumber = buildNumber,
-            versionName = APK_ASSET_NAME
-                .removePrefix("MoghimiV2Ray_")
-                .removeSuffix("_arm64-v8a.apk"),
+            versionName = versionName,
             tagName = latestRelease.optString("tag_name"),
             sha256 = checksum,
+            apkAssetName = apkAssetName,
             releaseNotes = notes,
             releaseUrl = latestRelease.optString("html_url")
         )
@@ -229,8 +231,8 @@ object MoghimiUpdateManager {
             throw IOException("ساخت پوشه موقت به‌روزرسانی ناموفق بود.")
         }
 
-        val partialFile = File(updateDirectory, APK_ASSET_NAME + ".part")
-        val finalFile = File(updateDirectory, APK_ASSET_NAME)
+        val partialFile = File(updateDirectory, info.apkAssetName + ".part")
+        val finalFile = File(updateDirectory, info.apkAssetName)
         partialFile.delete()
 
         try {
@@ -396,7 +398,11 @@ object MoghimiUpdateManager {
         return code % BUILD_NUMBER_MODULUS
     }
 
-    private fun resolveChecksum(apkAsset: JSONObject, assets: JSONArray): String {
+    private fun resolveChecksum(
+        apkAsset: JSONObject,
+        assets: JSONArray,
+        apkAssetName: String
+    ): String {
         val digest = apkAsset.optString("digest")
             .removePrefix("sha256:")
             .lowercase(Locale.US)
@@ -410,10 +416,23 @@ object MoghimiUpdateManager {
         }
         val checksumText = requestText(checksumUrl, accept = "text/plain")
         val line = checksumText.lineSequence().firstOrNull {
-            it.contains(APK_ASSET_NAME)
+            it.contains(apkAssetName)
         } ?: throw IOException("هش فایل ARM64 در فهرست بررسی پیدا نشد.")
         val candidate = line.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
         return candidate.lowercase(Locale.US)
+    }
+
+    private fun findArm64Asset(assets: JSONArray): Triple<JSONObject, String, String>? {
+        val pattern = Regex(
+            "^MoghimiV2Ray_(\\d+\\.\\d+\\.\\d+)_arm64-v8a\\.apk$"
+        )
+        for (index in 0 until assets.length()) {
+            val asset = assets.optJSONObject(index) ?: continue
+            val name = asset.optString("name")
+            val version = pattern.matchEntire(name)?.groupValues?.getOrNull(1) ?: continue
+            return Triple(asset, name, version)
+        }
+        return null
     }
 
     private fun findAsset(assets: JSONArray, name: String): JSONObject? {

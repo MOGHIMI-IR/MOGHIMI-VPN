@@ -4,8 +4,8 @@
 
 ## 📲 دریافت برنامه
 
-- [دانلود مستقیم ARM64 از Supabase](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a.apk)
-- [دانلود ARM64 از GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-4/MoghimiV2Ray_1.0.0_arm64-v8a.apk)
+- [دانلود مستقیم ARM64 از Supabase](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20(1).apk)
+- [دانلود ARM64 از GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-4/MoghimiV2Ray_1.0.3_arm64-v8a.apk)
 - [مشاهده همه خروجی‌های APK](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases)
 
 [🌐 ورود به سایت رسمی Moghimi V2Ray](https://moghimi-ir.github.io/MG_V2RAY/)
@@ -19,6 +19,13 @@
 [🛑](https://web.eitaa.com/assets/img/emoji/1f6d1.png) کانفیگ‌هایی که در پنل سایت غیرفعال یا حذف شوند، پس از همگام‌سازی بعدی از گروه ابری برنامه کنار می‌روند و کانفیگ‌های فعال جدید جایگزین می‌شوند.
 
 [🔄](https://web.eitaa.com/assets/img/emoji/1f504.png) **محدودیت نسخه فعلی:** برنامه هنوز سلامت تمام سرورها را به‌صورت پیوسته Ping نمی‌کند و کانفیگ خراب را مستقلاً تشخیص نمی‌دهد؛ فعال یا غیرفعال کردن کانفیگ‌ها از پنل سایت انجام می‌شود.
+
+## 🎨 رابط کاربری نسخه 1.0.3
+
+- سه تب فارسی: اتصال، کانفیگ‌ها و تنظیمات.
+- صفحه اتصال اختصاصی با دکمه متحرک، وضعیت واقعی سرویس و نمایش کانفیگ انتخاب‌شده.
+- انیمیشن‌های Compose و فونت Tanha به‌صورت محلی داخل APK.
+- صفحه کانفیگ‌ها از قابلیت‌های موجود v2rayNG برای واردکردن، QR، ویرایش، حذف، اشتراک‌گذاری و تست سرورها استفاده می‌کند.
 
 ## ✨ امکانات نسخه فعلی
 
@@ -49,7 +56,7 @@
 
 ## 🧪 وضعیت و امضای انتشار
 
-نسخه فعلی **Beta 1.0.0** است. تست‌های واحد و ساخت APK در CI موفق بوده‌اند؛ اتصال واقعی و سازگاری با همه دستگاه‌ها باید روی گوشی واقعی آزمایش شود.
+نسخه فعلی **Beta 1.0.3** است. تست‌های واحد و ساخت APK در CI موفق بوده‌اند؛ اتصال واقعی و سازگاری با همه دستگاه‌ها باید روی گوشی واقعی آزمایش شود.
 
 خروجی‌های فعلی debug-signed هستند. تا زمانی که keystore خصوصی ثابت برای امضای نسخه‌های انتشار تنظیم نشده باشد، ممکن است نصب بیلد جدید روی نسخه قبلی نیازمند حذف نسخه قبلی باشد؛ حذف برنامه ممکن است داده‌های محلی را پاک کند. فایل keystore و رمزهایش را هرگز در مخزن عمومی قرار نده.
 

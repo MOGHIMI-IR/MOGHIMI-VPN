@@ -4,7 +4,7 @@
 
 **کلاینت بومی اندروید برای اتصال V2Ray با همگام‌سازی کانفیگ‌های سایت مقیمی**
 
-[🌐 ورود به سایت رسمی](https://moghimi-ir.github.io/MG_V2RAY/) · [⬇️ دانلود مستقیم ARM64 از Supabase](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a.apk) · [📦 همه نسخه‌ها در GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases)
+[🌐 ورود به سایت رسمی](https://moghimi-ir.github.io/MG_V2RAY/) · [⬇️ دانلود مستقیم ARM64 از Supabase](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20(1).apk) · [📦 همه نسخه‌ها در GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases)
 
 </div>
 
@@ -12,12 +12,12 @@
 
 ## 📲 دانلود اپلیکیشن
 
-نام نسخه برنامه: **1.0.0 · Android · ARM64** (شماره بیلد با هر ریلیز افزایش پیدا می‌کند)
+نام نسخه برنامه: **1.0.3 · Android · ARM64** (شماره بیلد با هر ریلیز افزایش پیدا می‌کند)
 
 | اولویت | دریافت |
 |---|---|
-| ⭐ دانلود ۱ · Supabase | [دانلود مستقیم APK برای اندروید](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a.apk) |
-| دانلود ۲ · GitHub | [دانلود APK از Release](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-4/MoghimiV2Ray_1.0.0_arm64-v8a.apk) |
+| ⭐ دانلود ۱ · Supabase | [دانلود مستقیم APK برای اندروید](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20(1).apk) |
+| دانلود ۲ · GitHub | [دانلود APK از Release](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-4/MoghimiV2Ray_1.0.3_arm64-v8a.apk) |
 | سایر معماری‌ها | [مشاهده همه فایل‌های انتشار](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases) |
 
 برای بیشتر گوشی‌های اندرویدی جدید، ARM64 گزینه مناسب است. Universal و سایر معماری‌ها در بخش Releases قرار دارند. فایل APK مخصوص اندروید است و روی iOS نصب نمی‌شود.
@@ -31,6 +31,14 @@
 [🛑](https://web.eitaa.com/assets/img/emoji/1f6d1.png) کانفیگ‌هایی که در پنل سایت غیرفعال یا حذف شوند، پس از همگام‌سازی بعدی از گروه ابری برنامه کنار می‌روند و موارد فعال جدید جایگزین می‌شوند.
 
 [🔄](https://web.eitaa.com/assets/img/emoji/1f504.png) **شفاف‌سازی:** نسخه فعلی سلامت همه سرورها را به‌صورت خودکار و پیوسته Ping نمی‌کند؛ تشخیص و غیرفعال‌کردن کانفیگ‌های ازکارافتاده از سمت مدیریت سایت انجام می‌شود.
+
+## 🎨 رابط کاربری نسخه 1.0.3
+
+- سه بخش مستقل فارسی: اتصال، کانفیگ‌ها و تنظیمات.
+- صفحه اتصال اختصاصی با نمایش کانفیگ انتخاب‌شده و وضعیت واقعی سرویس.
+- انیمیشن‌های بومی Compose برای حرکت حلقه اتصال و جابه‌جایی بین تب‌ها.
+- فونت Tanha و نشان رسمی Moghimi؛ منابع گرافیکی و فونت داخل خود APK قرار دارند.
+- صفحه کانفیگ‌ها از قابلیت‌های اصلی واردکردن، ویرایش، حذف، اشتراک‌گذاری، QR، تست و مدیریت گروه‌های v2rayNG استفاده می‌کند.
 
 ## ✨ قابلیت‌ها
 
@@ -69,7 +77,7 @@
 
 ## 🧪 وضعیت انتشار
 
-این خروجی نسخه **Beta 1.0.0** است. ساخت APK و تست‌های واحد در GitHub Actions موفق بوده‌اند؛ بااین‌حال، عملکرد اتصال، سازگاری با تمام مدل‌های گوشی و همگام‌سازی باید روی دستگاه واقعی نیز آزمایش شود.
+این خروجی نسخه **Beta 1.0.3** است. ساخت APK و تست‌های واحد در GitHub Actions موفق بوده‌اند؛ بااین‌حال، عملکرد اتصال، سازگاری با تمام مدل‌های گوشی و همگام‌سازی باید روی دستگاه واقعی نیز آزمایش شود.
 
 بیلدهای فعلی از نوع debug-signed هستند. تا پیش از تنظیم keystore خصوصی ثابت برای امضای انتشار، ممکن است نصب نسخه بعدی روی نسخه فعلی نیازمند حذف نسخه قبلی باشد. حذف برنامه ممکن است داده‌های محلی را پاک کند. هرگز فایل keystore یا رمزهای آن را در مخزن عمومی قرار نده.
 
