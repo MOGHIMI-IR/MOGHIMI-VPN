@@ -924,11 +924,21 @@ replace_once(
             reloadAllGroups(_uiState.value.groups.map { it.id })
         }
     }""",
-    """    private fun onTestsFinished(requestId: String) {
+    """    private fun finishBestConfigSelection(success: Boolean) {
+        val callback = pendingBestConfigCallback
+        pendingBestConfigCallback = null
+        callback?.invoke(success)
+    }
+
+    private fun onTestsFinished(requestId: String) {
         val request = testRequests.completeBulk(requestId) ?: return
-        resetTestStatus()
         if (request.autoSelectBest) {
-            selectBestTestedServer(request)
+            selectBestTestedServer(request) { success ->
+                resetTestStatus()
+                finishBestConfigSelection(success)
+            }
+        } else {
+            resetTestStatus()
         }
         viewModelScope.launch(ioDispatcher) {
             cacheMutex.withLock { groupDataCache.clear() }
@@ -936,14 +946,25 @@ replace_once(
         }
     }
 
-    private fun selectBestTestedServer(request: MainTestRequests.Bulk) {
+    private fun selectBestTestedServer(
+        request: MainTestRequests.Bulk,
+        onComplete: (Boolean) -> Unit
+    ) {
         viewModelScope.launch {
             val initialState = uiState.value
+            if (initialState.isRunning) {
+                onComplete(false)
+                return@launch
+            }
+
+            // A selection changed by the user while tests were running takes priority.
             if (
-                initialState.isRunning ||
                 initialState.selectedGuid != request.initialSelectedGuid ||
                 initialState.selectedGroupId != request.initialSelectedGroupId
-            ) return@launch
+            ) {
+                onComplete(!initialState.selectedGuid.isNullOrBlank())
+                return@launch
+            }
 
             val best = withContext(ioDispatcher) {
                 val stillSaved = dataSource.getServerGuidList("").toHashSet()
@@ -962,52 +983,76 @@ replace_once(
                             .thenBy { if (it.first == request.initialSelectedGuid) 0 else 1 }
                             .thenBy { it.first }
                     )
-            } ?: return@launch
+            }
+            if (best == null) {
+                onComplete(false)
+                return@launch
+            }
 
-            // Never override a user's choice made while the background scan was running.
             val latestState = uiState.value
+            if (latestState.isRunning) {
+                onComplete(false)
+                return@launch
+            }
             if (
-                latestState.isRunning ||
                 latestState.selectedGuid != request.initialSelectedGuid ||
                 latestState.selectedGroupId != request.initialSelectedGroupId
-            ) return@launch
+            ) {
+                onComplete(!latestState.selectedGuid.isNullOrBlank())
+                return@launch
+            }
 
             updateSelectedGuid(best.first)
             if (latestState.groups.any { it.id == best.third }) {
                 subscriptionIdChanged(best.third)
             }
+            onComplete(true)
         }
     }
 
     /**
-     * Runs the app's existing real outbound-delay test against every saved profile.
-     * It does not touch the active VPN tunnel or change the current selection until all
-     * successful results are known. User selections and an active connection always win.
+     * Run outbound-delay tests only after the user presses Connect.
+     * The callback is invoked after the best profile has been selected.
      */
-    fun autoTestAllConfigsAndSelectBest(): Job {
-        autoBestConfigJob?.takeIf { it.isActive }?.let { return it }
+    fun autoTestAllConfigsAndSelectBest(onComplete: (Boolean) -> Unit): Job {
+        autoBestConfigJob?.takeIf { it.isActive }?.let {
+            onComplete(false)
+            return it
+        }
+        pendingBestConfigCallback = onComplete
         val job = viewModelScope.launch {
             try {
                 setupGroupJob?.join()
                 preloadJob?.join()
 
-                // Another explicit batch test has priority. Wait briefly only for a
-                // single active-tunnel ping so the two request types never collide.
-                if (testRequests.bulk != null) return@launch
+                // Another explicit batch test has priority.
+                if (testRequests.bulk != null) {
+                    finishBestConfigSelection(false)
+                    return@launch
+                }
                 if (testRequests.isTesting) {
                     val idleState = withTimeoutOrNull(20_000L) {
                         uiState.first { state -> !state.isTesting }
                     }
-                    if (idleState == null) return@launch
+                    if (idleState == null) {
+                        finishBestConfigSelection(false)
+                        return@launch
+                    }
                 }
-                if (testRequests.isTesting || testRequests.bulk != null) return@launch
+                if (testRequests.isTesting || testRequests.bulk != null) {
+                    finishBestConfigSelection(false)
+                    return@launch
+                }
 
                 val allServerGuids = withContext(ioDispatcher) {
                     dataSource.getServerGuidList("")
                         .distinct()
                         .filter { guid -> dataSource.decodeServerConfig(guid) != null }
                 }
-                if (allServerGuids.isEmpty()) return@launch
+                if (allServerGuids.isEmpty()) {
+                    finishBestConfigSelection(false)
+                    return@launch
+                }
 
                 val resetServers = withContext(ioDispatcher) {
                     buildServersCache(allServerGuids)
@@ -1056,20 +1101,24 @@ replace_once(
                         if (testRequests.completeBulk(request.id) != null) {
                             cancelPendingTestResults()
                             resetTestStatus()
+                            finishBestConfigSelection(false)
                         }
                         LogUtil.e(
                             AppConfig.TAG,
-                            "Automatic all-config latency scan failed",
+                            "Connect-time all-config latency scan failed",
                             error
                         )
                     }
                 }
             } catch (cancelled: CancellationException) {
+                finishBestConfigSelection(false)
                 throw cancelled
             } catch (error: Exception) {
+                resetTestStatus()
+                finishBestConfigSelection(false)
                 LogUtil.e(
                     AppConfig.TAG,
-                    "Failed to prepare automatic all-config latency scan",
+                    "Failed to prepare connect-time best-server scan",
                     error
                 )
             }
@@ -1077,7 +1126,7 @@ replace_once(
         autoBestConfigJob = job
         return job
     }""",
-    "automatic all-profile test and guarded best selection"
+    "connect-time all-profile test and guarded best selection"
 )
 replace_once(
     view_model_file,
