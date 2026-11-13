@@ -51,6 +51,7 @@ object MoghimiUpdateManager {
         val sha256: String,
         val apkAssetName: String,
         val githubApkUrl: String,
+        val expectedSizeBytes: Long,
         val releaseNotes: String,
         val releaseUrl: String
     )
@@ -100,6 +101,10 @@ object MoghimiUpdateManager {
         val githubApkUrl = validateGithubApkUrl(
             apkAsset.optString("browser_download_url")
         )
+        val expectedSizeBytes = apkAsset.optLong("size", 0L)
+        if (expectedSizeBytes !in 1_000_000L..MAX_APK_SIZE_BYTES) {
+            throw IOException("اندازهٔ فایل APK در اطلاعات انتشار معتبر نیست.")
+        }
 
         val checksum = resolveChecksum(apkAsset, assets, apkAssetName)
         if (!checksum.matches(Regex("^[0-9a-f]{64}$"))) {
@@ -118,6 +123,7 @@ object MoghimiUpdateManager {
             sha256 = checksum,
             apkAssetName = apkAssetName,
             githubApkUrl = githubApkUrl,
+            expectedSizeBytes = expectedSizeBytes,
             releaseNotes = notes,
             releaseUrl = latestRelease.optString("html_url")
         )
@@ -302,6 +308,12 @@ object MoghimiUpdateManager {
             val expectedLength = connection.contentLengthLong
             if (expectedLength > MAX_APK_SIZE_BYTES) {
                 throw IOException("حجم فایل APK از حد مجاز بیشتر است.")
+            }
+            if (expectedLength > 0L && expectedLength != info.expectedSizeBytes) {
+                throw IOException(
+                    "اندازهٔ فایل دریافتی از " + sourceName +
+                        " با اندازهٔ فایل انتشار جدید مطابقت ندارد."
+                )
             }
 
             val digest = MessageDigest.getInstance("SHA-256")

@@ -215,6 +215,23 @@ theme_file.write_text(theme, encoding="utf-8")
 locale_file = java / "handler/AppLocaleManager.kt"
 replace_once(
     locale_file,
+    """    fun initialize(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {""",
+    """    fun initialize(context: Context) {
+        // One-time Moghimi locale migration: treat the legacy AUTO default as Persian,
+        // but do not overwrite a language explicitly selected by the user.
+        if (!MmkvManager.decodeSettingsBool("moghimi_persian_locale_migrated", false)) {
+            val savedLanguage = MmkvManager.decodeSettingsString(AppConfig.PREF_LANGUAGE)
+            if (savedLanguage.isNullOrBlank() || savedLanguage == Language.AUTO.code) {
+                MmkvManager.encodeSettings(AppConfig.PREF_LANGUAGE, Language.PERSIAN.code)
+            }
+            MmkvManager.encodeSettings("moghimi_persian_locale_migrated", true)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {""",
+    "one-time Persian locale migration"
+)
+replace_once(
+    locale_file,
     "MmkvManager.decodeSettingsString(AppConfig.PREF_LANGUAGE) ?: Language.AUTO.code",
     "MmkvManager.decodeSettingsString(AppConfig.PREF_LANGUAGE) ?: Language.PERSIAN.code",
     "default Persian app locale"
