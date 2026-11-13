@@ -211,6 +211,15 @@ theme = theme.replace(
 )
 theme_file.write_text(theme, encoding="utf-8")
 
+# Default new installations to Persian, while keeping any language the user has already selected.
+locale_file = java / "handler/AppLocaleManager.kt"
+replace_once(
+    locale_file,
+    "MmkvManager.decodeSettingsString(AppConfig.PREF_LANGUAGE) ?: Language.AUTO.code",
+    "MmkvManager.decodeSettingsString(AppConfig.PREF_LANGUAGE) ?: Language.PERSIAN.code",
+    "default Persian app locale"
+)
+
 # Apply the uploaded Moghimi emblem as the launcher icon.
 manifest = app / "src/main/AndroidManifest.xml"
 manifest_source = manifest.read_text(encoding="utf-8")

@@ -141,6 +141,53 @@ jobs:
           files: release-files/*
           fail_on_unmatched_files: true
 
+      - name: Sync verified APK to the Supabase download object
+        id: supabase
+        if: github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [[ -z "$SUPABASE_SERVICE_ROLE_KEY" ]]; then
+            echo "status=skipped (SUPABASE_SERVICE_ROLE_KEY secret is not configured)" >> "$GITHUB_OUTPUT"
+            echo "::warning::APK is published on GitHub, but Supabase sync was skipped. Add SUPABASE_SERVICE_ROLE_KEY to repository Actions secrets to enable it."
+            exit 0
+          fi
+
+          APK="release-files/MoghimiV2Ray_1.0.3_arm64-v8a.apk"
+          test -s "$APK"
+          OBJECT_URL="https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20%281%29.apk"
+          PUBLIC_URL="https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20%281%29.apk"
+
+          curl --fail-with-body --silent --show-error --retry 3 --retry-delay 2 \
+            --request POST "$OBJECT_URL" \
+            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "Content-Type: application/vnd.android.package-archive" \
+            --header "Cache-Control: max-age=60" \
+            --header "x-upsert: true" \
+            --data-binary @"$APK" \
+            --output "$RUNNER_TEMP/supabase-upload-response.json"
+
+          # Verify the public object, not only the authenticated upload response.
+          curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+            "$PUBLIC_URL?moghimi_build=${GITHUB_RUN_NUMBER}" \
+            --output "$RUNNER_TEMP/supabase-verified.apk"
+
+          EXPECTED_SHA="$(sha256sum "$APK" | awk '{print $1}')"
+          ACTUAL_SHA="$(sha256sum "$RUNNER_TEMP/supabase-verified.apk" | awk '{print $1}')"
+          if [[ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]]; then
+            echo "::error::Supabase public APK does not match the newly published GitHub APK."
+            exit 1
+          fi
+          if ! cmp --silent "$APK" "$RUNNER_TEMP/supabase-verified.apk"; then
+            echo "::error::Supabase APK byte comparison failed."
+            exit 1
+          fi
+
+          echo "status=uploaded and SHA-256 verified" >> "$GITHUB_OUTPUT"
+          echo "Supabase fixed ARM64 object was uploaded and verified."
+
       - name: Write build summary
         if: always()
         shell: bash
@@ -152,5 +199,6 @@ jobs:
             echo "- App package: ir.moghimi.v2ray"
             echo "- Version: 1.0.3 (build ${{ github.run_number }}, ARM64 only)"
             echo "- Signing mode: ${MOGHIMI_SIGNING_MODE:-debug-fallback}"
+            echo "- Supabase sync: ${{ steps.supabase.outputs.status }}"
             echo "- APK architecture variants are listed in the Artifacts section when the build succeeds."
           } >> "$GITHUB_STEP_SUMMARY"
