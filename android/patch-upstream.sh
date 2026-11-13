@@ -215,12 +215,17 @@ theme_file.write_text(theme, encoding="utf-8")
 manifest = app / "src/main/AndroidManifest.xml"
 manifest_source = manifest.read_text(encoding="utf-8")
 old_icon = 'android:icon="@mipmap/ic_launcher"'
-if manifest_source.count(old_icon) != 1:
-    raise SystemExit("Expected one existing launcher icon attribute")
-manifest_source = manifest_source.replace(
-    old_icon,
-    'android:icon="@drawable/moghimi_logo"',
-    1
+application_start = manifest_source.find("<application")
+if application_start < 0:
+    raise SystemExit("Could not locate the Android application manifest element")
+icon_position = manifest_source.find(old_icon, application_start)
+if icon_position < 0:
+    raise SystemExit("Could not locate the application launcher icon attribute")
+new_icon = 'android:icon="@drawable/moghimi_logo"'
+manifest_source = (
+    manifest_source[:icon_position]
+    + new_icon
+    + manifest_source[icon_position + len(old_icon):]
 )
 manifest.write_text(manifest_source, encoding="utf-8")
 

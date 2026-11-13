@@ -150,7 +150,7 @@ jobs:
             echo ""
             echo "- Source: pinned v2rayNG/Xray checkout"
             echo "- App package: ir.moghimi.v2ray"
-            echo "- Version: 1.0.0 (build ${{ github.run_number }}, ARM64 only)"
+            echo "- Version: 1.0.3 (build ${{ github.run_number }}, ARM64 only)"
             echo "- Signing mode: ${MOGHIMI_SIGNING_MODE:-debug-fallback}"
             echo "- APK architecture variants are listed in the Artifacts section when the build succeeds."
           } >> "$GITHUB_STEP_SUMMARY"
