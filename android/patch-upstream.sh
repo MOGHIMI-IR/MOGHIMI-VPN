@@ -778,7 +778,325 @@ launcher.write_text(
     encoding="utf-8"
 )
 
-print("Moghimi branding and cloud sync patch applied.")
+
+# Automatic startup scan across every saved profile, with guarded best-server selection.
+contract_file = java / "ui/main/MainContract.kt"
+replace_once(
+    contract_file,
+    "    val status: MainStatus = MainStatus.Disconnected,\n",
+    "    val status: MainStatus = MainStatus.Disconnected,\n    val activeTunnelPingMillis: Long? = null,\n",
+    "separate active tunnel ping state"
+)
+
+requests_file = java / "ui/main/MainTestRequests.kt"
+replace_once(
+    requests_file,
+    "    data class Bulk(val id: String, val groupId: String)\n",
+    """    data class Bulk(
+        val id: String,
+        val groupId: String,
+        val autoSelectBest: Boolean = false,
+        val initialSelectedGuid: String? = null,
+        val initialSelectedGroupId: String = "",
+        val testedGuids: List<String> = emptyList()
+    )
+""",
+    "auto-select metadata for bulk test requests"
+)
+replace_once(
+    requests_file,
+    "    fun beginBulk(groupId: String): Bulk = Bulk(UUID.randomUUID().toString(), groupId).also { bulk = it }\n",
+    """    fun beginBulk(
+        groupId: String,
+        autoSelectBest: Boolean = false,
+        initialSelectedGuid: String? = null,
+        initialSelectedGroupId: String = "",
+        testedGuids: List<String> = emptyList()
+    ): Bulk = Bulk(
+        id = UUID.randomUUID().toString(),
+        groupId = groupId,
+        autoSelectBest = autoSelectBest,
+        initialSelectedGuid = initialSelectedGuid,
+        initialSelectedGroupId = initialSelectedGroupId,
+        testedGuids = testedGuids
+    ).also { bulk = it }
+""",
+    "bulk request metadata builder"
+)
+
+view_model_file = java / "ui/main/MainViewModel.kt"
+view_model = view_model_file.read_text(encoding="utf-8")
+if "import kotlinx.coroutines.flow.first\n" not in view_model:
+    replace_once(
+        view_model_file,
+        "import kotlinx.coroutines.flow.asStateFlow\n",
+        "import kotlinx.coroutines.flow.asStateFlow\nimport kotlinx.coroutines.flow.first\n",
+        "StateFlow first import for startup scan"
+    )
+if "import kotlinx.coroutines.withTimeoutOrNull\n" not in view_model:
+    replace_once(
+        view_model_file,
+        "import kotlinx.coroutines.withContext\n",
+        "import kotlinx.coroutines.withContext\nimport kotlinx.coroutines.withTimeoutOrNull\n",
+        "timeout import for current ping coordination"
+    )
+replace_once(
+    view_model_file,
+    "    private var bulkTestJob: Job? = null\n",
+    "    private var bulkTestJob: Job? = null\n    private var autoBestConfigJob: Job? = null\n",
+    "startup best-config job state"
+)
+
+replace_once(
+    view_model_file,
+    """            is MainServiceEvent.MeasureDelayResult -> {
+                if (!uiState.value.isRunning) return
+                _uiState.update { it.copy(isTesting = false, status = MainStatus.ConnectionTest(event.result)) }
+            }""",
+    """            is MainServiceEvent.MeasureDelayResult -> {
+                if (!uiState.value.isRunning) return
+                if (!testRequests.completeCurrent(event.requestId)) return
+                _uiState.update { state ->
+                    state.copy(
+                        isTesting = testRequests.isTesting,
+                        status = if (testRequests.bulk != null) state.status
+                        else MainStatus.ConnectionTest(event.result),
+                        activeTunnelPingMillis = event.result.delayMillis
+                    )
+                }
+            }""",
+    "track active tunnel ping independently from batch scan"
+)
+replace_once(
+    view_model_file,
+    """            is MainServiceEvent.MeasureDelayCancelled -> {
+                //if (testRequests.completeCurrent(event.requestId)) resetTestStatus()
+            }""",
+    """            is MainServiceEvent.MeasureDelayCancelled -> {
+                if (testRequests.completeCurrent(event.requestId)) resetTestStatus()
+            }""",
+    "complete cancelled active tunnel ping request"
+)
+replace_once(
+    view_model_file,
+    """    fun testCurrentServerRealPing() {
+        if (!uiState.value.isRunning) return
+        _uiState.update { it.copy(isTesting = true, status = MainStatus.Testing) }
+        dataSource.testCurrentServerRealPing("")
+    }""",
+    """    fun testCurrentServerRealPing() {
+        if (!uiState.value.isRunning || testRequests.isTesting) return
+        val requestId = testRequests.beginCurrent()
+        _uiState.update { it.copy(isTesting = true, status = MainStatus.Testing) }
+        dataSource.testCurrentServerRealPing(requestId)
+    }""",
+    "use owned request id for active tunnel ping"
+)
+replace_once(
+    view_model_file,
+    """    private fun onTestsFinished(requestId: String) {
+        if (testRequests.completeBulk(requestId) == null) return
+        resetTestStatus()
+        viewModelScope.launch(ioDispatcher) {
+            cacheMutex.withLock { groupDataCache.clear() }
+            reloadAllGroups(_uiState.value.groups.map { it.id })
+        }
+    }""",
+    """    private fun onTestsFinished(requestId: String) {
+        val request = testRequests.completeBulk(requestId) ?: return
+        resetTestStatus()
+        if (request.autoSelectBest) {
+            selectBestTestedServer(request)
+        }
+        viewModelScope.launch(ioDispatcher) {
+            cacheMutex.withLock { groupDataCache.clear() }
+            reloadAllGroups(_uiState.value.groups.map { it.id })
+        }
+    }
+
+    private fun selectBestTestedServer(request: MainTestRequests.Bulk) {
+        viewModelScope.launch {
+            val initialState = uiState.value
+            if (
+                initialState.isRunning ||
+                initialState.selectedGuid != request.initialSelectedGuid ||
+                initialState.selectedGroupId != request.initialSelectedGroupId
+            ) return@launch
+
+            val best = withContext(ioDispatcher) {
+                val stillSaved = dataSource.getServerGuidList("").toHashSet()
+                request.testedGuids.asSequence()
+                    .filter { guid -> guid in stillSaved }
+                    .mapNotNull { guid ->
+                        val delayMillis =
+                            dataSource.decodeAffiliationInfo(guid)?.testDelayMillis ?: 0L
+                        if (delayMillis <= 0L) return@mapNotNull null
+                        val profile = dataSource.decodeServerConfig(guid)
+                            ?: return@mapNotNull null
+                        Triple(guid, delayMillis, profile.subscriptionId)
+                    }
+                    .minWithOrNull(
+                        compareBy<Triple<String, Long, String>> { it.second }
+                            .thenBy { if (it.first == request.initialSelectedGuid) 0 else 1 }
+                            .thenBy { it.first }
+                    )
+            } ?: return@launch
+
+            // Never override a user's choice made while the background scan was running.
+            val latestState = uiState.value
+            if (
+                latestState.isRunning ||
+                latestState.selectedGuid != request.initialSelectedGuid ||
+                latestState.selectedGroupId != request.initialSelectedGroupId
+            ) return@launch
+
+            updateSelectedGuid(best.first)
+            if (latestState.groups.any { it.id == best.third }) {
+                subscriptionIdChanged(best.third)
+            }
+        }
+    }
+
+    /**
+     * Runs the app's existing real outbound-delay test against every saved profile.
+     * It does not touch the active VPN tunnel or change the current selection until all
+     * successful results are known. User selections and an active connection always win.
+     */
+    fun autoTestAllConfigsAndSelectBest(): Job {
+        autoBestConfigJob?.takeIf { it.isActive }?.let { return it }
+        val job = viewModelScope.launch {
+            try {
+                setupGroupJob?.join()
+                preloadJob?.join()
+
+                // Another explicit batch test has priority. Wait briefly only for a
+                // single active-tunnel ping so the two request types never collide.
+                if (testRequests.bulk != null) return@launch
+                if (testRequests.isTesting) {
+                    val idleState = withTimeoutOrNull(20_000L) {
+                        uiState.first { state -> !state.isTesting }
+                    }
+                    if (idleState == null) return@launch
+                }
+                if (testRequests.isTesting || testRequests.bulk != null) return@launch
+
+                val allServerGuids = withContext(ioDispatcher) {
+                    dataSource.getServerGuidList("")
+                        .distinct()
+                        .filter { guid -> dataSource.decodeServerConfig(guid) != null }
+                }
+                if (allServerGuids.isEmpty()) return@launch
+
+                val resetServers = withContext(ioDispatcher) {
+                    buildServersCache(allServerGuids)
+                        .map { server -> server.copy(testDelayMillis = 0L) }
+                }
+                val resetRows = withContext(ioDispatcher) {
+                    buildServerRows("", resetServers)
+                }
+                cacheMutex.withLock {
+                    groupDataCache[""] = resetServers
+                }
+                mutableServerGroupState("").value = ServerGroupUiState(
+                    servers = resetServers,
+                    rows = resetRows
+                )
+
+                val baseline = uiState.value
+                val request = testRequests.beginBulk(
+                    groupId = "",
+                    autoSelectBest = true,
+                    initialSelectedGuid = baseline.selectedGuid,
+                    initialSelectedGroupId = baseline.selectedGroupId,
+                    testedGuids = allServerGuids
+                )
+                _uiState.update {
+                    it.copy(isTesting = true, status = MainStatus.Testing)
+                }
+
+                bulkTestJob = viewModelScope.launch {
+                    try {
+                        withContext(ioDispatcher) {
+                            dataSource.clearAllTestDelayResults(allServerGuids)
+                            dataSource.sendMsg2TestService(
+                                TestServiceMessage(
+                                    key = AppConfig.MSG_MEASURE_CONFIG_START,
+                                    subscriptionId = "",
+                                    serverGuids = allServerGuids,
+                                    onlyTcp = false
+                                ),
+                                request.id
+                            )
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        if (testRequests.completeBulk(request.id) != null) {
+                            cancelPendingTestResults()
+                            resetTestStatus()
+                        }
+                        LogUtil.e(
+                            AppConfig.TAG,
+                            "Automatic all-config latency scan failed",
+                            error
+                        )
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                LogUtil.e(
+                    AppConfig.TAG,
+                    "Failed to prepare automatic all-config latency scan",
+                    error
+                )
+            }
+        }
+        autoBestConfigJob = job
+        return job
+    }""",
+    "automatic all-profile test and guarded best selection"
+)
+replace_once(
+    view_model_file,
+    """                status = if (!clearTestingText && state.isRunning == running) state.status
+                else if (running) MainStatus.Connected else MainStatus.Disconnected
+            )""",
+    """                status = if (!clearTestingText && state.isRunning == running) state.status
+                else if (running) MainStatus.Connected else MainStatus.Disconnected,
+                activeTunnelPingMillis = if (!running || clearTestingText) {
+                    null
+                } else {
+                    state.activeTunnelPingMillis
+                }
+            )""",
+    "reset active tunnel ping when connection state changes"
+)
+
+# Cloud sync completes before the automatic scan so freshly downloaded profiles are included.
+replace_once(
+    main_activity_file,
+    """                moghimiSyncRunning = false
+            }
+        }
+    }
+
+    private fun shareToClipboard(guid: String): Boolean =""",
+    """                moghimiSyncRunning = false
+                if (autoSelect) {
+                    mainViewModel.autoTestAllConfigsAndSelectBest()
+                }
+            }
+        }
+    }
+
+    private fun shareToClipboard(guid: String): Boolean =""",
+    "run all-profile latency scan after startup cloud sync"
+)
+
+print("Automatic all-profile real-latency scan and guarded best-config selection applied.")
+
+print("Moghimi branding, cloud sync and automatic best-config selection patch applied.")
 PY
 
 python3 "$ROOT/android/patch-updater.py" "$PROJECT"

@@ -188,10 +188,14 @@ private fun MoghimiConnectionPage(
         mainViewModel.serverGroupState(uiState.selectedGroupId)
     }
     val selectedGroup by selectedGroupFlow.collectAsStateWithLifecycle()
+    val allServerGroupFlow = remember(mainViewModel) {
+        mainViewModel.serverGroupState("")
+    }
+    val allServerGroup by allServerGroupFlow.collectAsStateWithLifecycle()
     val selectedServer = selectedGroup.rows.firstOrNull { it.guid == uiState.selectedGuid }
+        ?: allServerGroup.rows.firstOrNull { it.guid == uiState.selectedGuid }
     val running = uiState.isRunning
-    val measuredPingMillis =
-        (uiState.status as? MainStatus.ConnectionTest)?.result?.delayMillis
+    val measuredPingMillis = uiState.activeTunnelPingMillis
     val pingStatusText = when {
         !running || selectedServer == null -> "—"
         uiState.isTesting -> "در حال سنجش"
