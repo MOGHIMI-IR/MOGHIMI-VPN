@@ -5,7 +5,7 @@
 ## 📲 دریافت برنامه
 
 - [دانلود مستقیم ARM64 از Supabase](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20(1).apk)
-- [دانلود ARM64 از GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-4/MoghimiV2Ray_1.0.3_arm64-v8a.apk)
+- [دانلود ARM64 از GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-26/MoghimiV2Ray_1.0.4_arm64-v8a.apk)
 - [مشاهده همه خروجی‌های APK](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases)
 
 [🌐 ورود به سایت رسمی Moghimi V2Ray](https://moghimi-ir.github.io/MG_V2RAY/)
@@ -54,9 +54,13 @@
 - ترافیک VPN از Android VpnService به آدرس داخل کانفیگ مسیریابی می‌شود و از Supabase عبور نمی‌کند.
 - همگام‌سازی دوره‌ای به WorkManager و محدودیت‌های سیستم‌عامل وابسته است و تضمین اجرای دقیق در ساعت مشخص ندارد.
 
+## 🔄 دریافت نسخه‌های جدید
+
+برنامه خودش APK نصب یا به‌روزرسانی نمی‌کند. برای دریافت نسخه جدید، از گزینه «بررسی نسخه جدید» به سایت رسمی برو و نصب را از مسیر معمول اندروید انجام بده. خود برنامه مجوز نصب بسته‌ها را درخواست نمی‌کند.
+
 ## 🧪 وضعیت و امضای انتشار
 
-نسخه فعلی **Beta 1.0.3** است. تست‌های واحد و ساخت APK در CI موفق بوده‌اند؛ اتصال واقعی و سازگاری با همه دستگاه‌ها باید روی گوشی واقعی آزمایش شود.
+نسخه فعلی **Beta 1.0.4** است. تست‌های واحد و ساخت APK در CI موفق بوده‌اند؛ اتصال واقعی و سازگاری با همه دستگاه‌ها باید روی گوشی واقعی آزمایش شود.
 
 خروجی‌های فعلی debug-signed هستند. تا زمانی که keystore خصوصی ثابت برای امضای نسخه‌های انتشار تنظیم نشده باشد، ممکن است نصب بیلد جدید روی نسخه قبلی نیازمند حذف نسخه قبلی باشد؛ حذف برنامه ممکن است داده‌های محلی را پاک کند. فایل keystore و رمزهایش را هرگز در مخزن عمومی قرار نده.
 

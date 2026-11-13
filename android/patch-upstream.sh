@@ -46,7 +46,7 @@ source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
     ("versionCode = 755", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
-    ('versionName = "2.3.15"', 'versionName = "1.0.3"', "versionName"),
+    ('versionName = "2.3.15"', 'versionName = "1.0.4"', "versionName"),
 ]:
     if source.count(old) != 1:
         raise SystemExit(f"Expected one Gradle match for {label}")
@@ -758,6 +758,28 @@ manifest_text = manifest_text.replace(
     'android:roundIcon="@drawable/ic_moghimi_launcher"',
     1
 )
+query_permission = """    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="PackageVisibilityPolicy,QueryAllPackagesPermission" />
+"""
+if manifest_text.count(query_permission) != 1:
+    raise SystemExit("Expected one broad package-visibility permission in upstream manifest")
+manifest_text = manifest_text.replace(query_permission, "", 1)
+
+root_tag = '    tools:ignore="MissingLeanbackLauncher">'
+query_block = root_tag + """
+    
+    <!-- Only expose user-launchable apps for the optional per-app proxy picker. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>"""
+if manifest_text.count(root_tag) != 1:
+    raise SystemExit("Could not locate manifest root for scoped package visibility")
+manifest_text = manifest_text.replace(root_tag, query_block, 1)
+
 manifest.write_text(manifest_text, encoding="utf-8")
 
 launcher = res / "drawable/ic_moghimi_launcher.xml"
