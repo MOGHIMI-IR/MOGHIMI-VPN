@@ -317,7 +317,7 @@ object MoghimiLicenseManager {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             // Publishable key only; no service-role or database secret is shipped in the APK.
             setRequestProperty("apikey", API_KEY)
-            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.6")
+            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.7")
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
