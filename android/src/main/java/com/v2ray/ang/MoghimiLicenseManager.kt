@@ -2,6 +2,12 @@ package com.v2ray.ang
 
 import android.content.Context
 import android.content.Intent
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
@@ -62,6 +68,9 @@ object MoghimiLicenseManager {
     private const val CACHE_STATUS = "cache_status"
     private const val CACHE_RELEASE = "cache_release"
     private const val OFFLINE_GRACE_MS = 60_000L
+    private const val UPDATE_CHANNEL_ID = "moghimi_app_updates"
+    private const val UPDATE_NOTIFICATION_ID = 58024
+    private const val SUPABASE_APK_PREFIX = "https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/"
 
     private val mutableState = MutableStateFlow(MoghimiLicenseUiState())
     val state: StateFlow<MoghimiLicenseUiState> = mutableState.asStateFlow()
@@ -149,6 +158,109 @@ object MoghimiLicenseManager {
 
     fun phone(context: Context): String = prefs(context).getString("phone", "").orEmpty()
 
+    @Suppress("DEPRECATION")
+    private fun installedVersionCode(context: Context): Long {
+        val info = if (Build.VERSION.SDK_INT >= 33) {
+            context.packageManager.getPackageInfo(
+                context.packageName,
+                PackageManager.PackageInfoFlags.of(0)
+            )
+        } else {
+            context.packageManager.getPackageInfo(context.packageName, 0)
+        }
+        return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+    }
+
+    private fun notifyUpdateAvailable(context: Context, versionName: String, downloadUrl: String) {
+        runCatching {
+            val app = context.applicationContext
+            val manager = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                manager.createNotificationChannel(
+                    NotificationChannel(
+                        UPDATE_CHANNEL_ID,
+                        "به‌روزرسانی مقیمی V2Ray",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply { description = "اعلان نسخه‌های جدید و اجباری برنامه" }
+                )
+            }
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+            val pending = PendingIntent.getActivity(app, UPDATE_NOTIFICATION_ID, intent, flags)
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(app, UPDATE_CHANNEL_ID)
+            } else {
+                Notification.Builder(app)
+            }
+            val notification = builder
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setContentTitle("به‌روزرسانی اجباری مقیمی V2Ray")
+                .setContentText("نسخهٔ $versionName آماده است؛ برای ادامهٔ اتصال، به‌روزرسانی کن.")
+                .setStyle(
+                    Notification.BigTextStyle().bigText(
+                        "نسخهٔ $versionName منتشر شده است. نسخهٔ قدیمی اجازهٔ اتصال ندارد. " +
+                            "برای دانلود مستقیم از سرور Supabase روی اعلان بزن."
+                    )
+                )
+                .setContentIntent(pending)
+                .setAutoCancel(true)
+                .setOnlyAlertOnce(true)
+                .build()
+            manager.notify(UPDATE_NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun applyReleaseInfo(context: Context, release: JSONObject): MoghimiLicenseUiState {
+        val versionName = release.optString("version_name").trim()
+        val versionCode = release.optLong("version_code")
+        val url = release.optString("apk_url").trim()
+        val sha = release.optString("sha256").trim()
+        val available = url.startsWith(SUPABASE_APK_PREFIX) &&
+            versionName.isNotBlank() && versionCode > installedVersionCode(context)
+        val updated = mutableState.value.copy(
+            updateAvailable = available,
+            latestVersionName = versionName.ifBlank { null },
+            latestVersionCode = versionCode,
+            latestApkUrl = url.takeIf { it.startsWith(SUPABASE_APK_PREFIX) },
+            latestSha256 = sha.ifBlank { null },
+            releaseNotes = release.optString("release_notes").ifBlank { null }
+        )
+        mutableState.value = updated
+        prefs(context).edit().putString(CACHE_RELEASE, release.toString()).apply()
+        if (available) {
+            val p = prefs(context)
+            if (p.getLong("update_notified_version_code", -1L) != versionCode) {
+                notifyUpdateAvailable(context, versionName, url)
+                p.edit().putLong("update_notified_version_code", versionCode).apply()
+            }
+        }
+        return updated
+    }
+
+    fun checkForUpdate(context: Context): MoghimiLicenseUiState {
+        return try {
+            val response = callApi(JSONObject().put("action", "release"))
+            if (!response.optBoolean("ok")) throw IllegalStateException("دریافت نسخهٔ جدید ناموفق بود.")
+            val release = response.optJSONObject("release")
+            if (release == null) {
+                mutableState.value = mutableState.value.copy(
+                    updateAvailable = false, latestVersionName = null, latestVersionCode = 0,
+                    latestApkUrl = null, latestSha256 = null, releaseNotes = null
+                )
+                mutableState.value
+            } else {
+                applyReleaseInfo(context, release)
+            }
+        } catch (_: Exception) {
+            val cached = prefs(context).getString(CACHE_RELEASE, null)
+            if (cached.isNullOrBlank()) mutableState.value
+            else runCatching { applyReleaseInfo(context, JSONObject(cached)) }.getOrElse { mutableState.value }
+        }
+    }
+
     /**
      * Restore this device's single server profile. Android Keystore tokens are erased
      * on uninstall, so a fresh token replaces the old token for this same Android ID.
@@ -205,7 +317,7 @@ object MoghimiLicenseManager {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             // Publishable key only; no service-role or database secret is shipped in the APK.
             setRequestProperty("apikey", API_KEY)
-            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.3")
+            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.4")
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -230,6 +342,7 @@ object MoghimiLicenseManager {
         "phone_mismatch" -> "شماره موبایل با پروفایل ثبت‌شده مطابقت ندارد."
         "device_blocked" -> "دسترسی این دستگاه غیرفعال شده است."
         "device_not_registered" -> "برای این دستگاه حساب قبلی ثبت نشده است."
+        "update_required" -> "نسخهٔ برنامه قدیمی شده است. برای ادامه، نسخهٔ جدید را از سرور دانلود کن: https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20%281%29.apk"
         "invalid_or_expired_code" -> "کد فعال‌سازی نامعتبر یا منقضی شده است."
         "username_mismatch" -> "نام کاربری با سفارش تلگرام یکسان نیست."
         else -> "ارتباط با سرویس اشتراک برقرار نشد (کد $status)."
@@ -322,7 +435,13 @@ object MoghimiLicenseManager {
             paidUsedBytes = result.optLong("paid_used_bytes"),
             paidGrantedBytes = result.optLong("paid_granted_bytes"),
             paidExpiresAt = result.optString("paid_expires_at").takeIf { it.isNotBlank() && it != "null" },
-            accessAllowed = result.optBoolean("access_allowed")
+            accessAllowed = result.optBoolean("access_allowed"),
+            updateAvailable = mutableState.value.updateAvailable,
+            latestVersionName = mutableState.value.latestVersionName,
+            latestVersionCode = mutableState.value.latestVersionCode,
+            latestApkUrl = mutableState.value.latestApkUrl,
+            latestSha256 = mutableState.value.latestSha256,
+            releaseNotes = mutableState.value.releaseNotes
         )
     }
 
@@ -458,6 +577,7 @@ object MoghimiLicenseManager {
                     throw IllegalStateException(errorMessage(result.optString("code"), 409))
                 }
 
+                val releaseState = mutableState.value
                 val updated = MoghimiLicenseUiState(
                     isRegistered = true,
                     username = username(context),
@@ -470,7 +590,13 @@ object MoghimiLicenseManager {
                     paidGrantedBytes = result.optLong("paid_granted_bytes"),
                     paidExpiresAt = result.optString("paid_expires_at")
                         .takeIf { it.isNotBlank() && it != "null" },
-                    accessAllowed = result.optBoolean("access_allowed")
+                    accessAllowed = result.optBoolean("access_allowed"),
+                    updateAvailable = releaseState.updateAvailable,
+                    latestVersionName = releaseState.latestVersionName,
+                    latestVersionCode = releaseState.latestVersionCode,
+                    latestApkUrl = releaseState.latestApkUrl,
+                    latestSha256 = releaseState.latestSha256,
+                    releaseNotes = releaseState.releaseNotes
                 )
 
                 synchronized(meterLock) {
@@ -508,9 +634,11 @@ object MoghimiLicenseManager {
     }
 
     fun canStartConnection(context: Context): Boolean {
+        val release = checkForUpdate(context)
+        if (release.updateAvailable) return false
         if (!hasProfile(context)) return false
         val updated = refreshStatus(context)
-        return updated.accessAllowed && updated.totalRemainingBytes > 0
+        return !updated.updateAvailable && updated.accessAllowed && updated.totalRemainingBytes > 0
     }
 
     fun formatBytes(value: Long): String {
