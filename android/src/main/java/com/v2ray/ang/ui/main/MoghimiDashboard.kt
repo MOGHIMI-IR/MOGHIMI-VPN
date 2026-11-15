@@ -73,7 +73,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.R
-import kotlinx.coroutines.delay
 
 @Composable
 fun MoghimiRootScreen(
@@ -94,9 +93,12 @@ fun MoghimiRootScreen(
     LaunchedEffect(license.isRegistered) {
         if (!license.isRegistered) selectedTab = 2
     }
+    LaunchedEffect(license.isRegistered, license.accessAllowed) {
+        if (license.isRegistered && license.accessAllowed) onCloudSyncClick()
+    }
     LaunchedEffect(Unit) {
         while (true) {
-            kotlinx.coroutines.delay(15_000L)
+            kotlinx.coroutines.delay(60_000L)
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
             }
@@ -240,26 +242,13 @@ private fun MoghimiConnectionPage(
     val selectedServer = selectedGroup.rows.firstOrNull { it.guid == uiState.selectedGuid }
         ?: allServerGroup.rows.firstOrNull { it.guid == uiState.selectedGuid }
     val running = uiState.isRunning
-    val measuredPingMillis = uiState.activeTunnelPingMillis
+    val measuredPingMillis = (uiState.status as? MainStatus.ConnectionTest)?.result?.delayMillis
     val pingStatusText = when {
         !running || selectedServer == null -> "—"
         uiState.isTesting -> "در حال سنجش"
         measuredPingMillis == null -> "در انتظار"
         measuredPingMillis >= 0L -> "$measuredPingMillis ms"
         else -> "ناموفق"
-    }
-
-    // Read the current tunnel's real latency, not the saved profile TCP test.
-    // Re-check after connecting and every 30 seconds while the tunnel stays active.
-    LaunchedEffect(running, selectedServer?.guid) {
-        if (!running || selectedServer == null) return@LaunchedEffect
-        delay(1_200L)
-        while (true) {
-            if (!mainViewModel.uiState.value.isTesting) {
-                mainViewModel.testCurrentServerRealPing()
-            }
-            delay(30_000L)
-        }
     }
 
     Column(
