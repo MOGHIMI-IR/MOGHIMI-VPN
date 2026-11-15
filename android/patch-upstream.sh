@@ -49,7 +49,7 @@ source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
     ("versionCode = 755", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
-    ('versionName = "2.3.15"', 'versionName = "2.0.5"', "versionName"),
+    ('versionName = "2.3.15"', 'versionName = "2.0.6"', "versionName"),
 ]:
     if source.count(old) != 1:
         raise SystemExit(f"Expected one Gradle match for {label}")
@@ -1300,3 +1300,328 @@ print("Moghimi cloud server export/share restrictions applied.")
 PY
 
 echo "Prepared branded Android source under $PROJECT"
+
+
+# Protect Moghimi-owned server profiles from normal UI export/share paths.
+# This applies only to the dedicated cloud group; user-created profiles retain sharing.
+python3 - "$PROJECT" <<'PY'
+from pathlib import Path
+import sys
+
+project = Path(sys.argv[1])
+java = project / "app/src/main/java/com/v2ray/ang"
+
+def replace_once(path: Path, old: str, new: str, label: str):
+    source = path.read_text(encoding="utf-8")
+    count = source.count(old)
+    if count != 1:
+        raise SystemExit(f"Expected one match for {label}; found {count} in {path}")
+    path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+# 1) Hide the row share button and the overflow menu only for Moghimi cloud profiles.
+pager = java / "ui/main/MainServerPager.kt"
+source = pager.read_text(encoding="utf-8")
+if "import com.v2ray.ang.MoghimiCloudSync" not in source:
+    source = source.replace(
+        "import com.v2ray.ang.R\n",
+        "import com.v2ray.ang.R\nimport com.v2ray.ang.MoghimiCloudSync\n",
+        1
+    )
+pager.write_text(source, encoding="utf-8")
+
+replace_once(
+    pager,
+    """private class ServerRowActions(
+    val select: (String) -> Unit,
+    val edit: (String, ProfileItem) -> Unit,
+    val share: (String, ProfileItem) -> Unit,
+    val more: (String, ProfileItem) -> Unit,
+    val remove: (String, String) -> Unit,
+)""",
+    """private class ServerRowActions(
+    val select: (String) -> Unit,
+    val edit: (String, ProfileItem) -> Unit,
+    val share: (String, ProfileItem) -> Unit,
+    val more: (String, ProfileItem) -> Unit,
+    val remove: (String, String) -> Unit,
+    val allowSharing: Boolean,
+)""",
+    "per-group sharing policy"
+)
+
+replace_once(
+    pager,
+    """    val actions = remember(
+        onSelectServer,
+        onEditServer,
+        onShareServer,
+        onMoreServer,
+        onRemoveServer,
+    ) {
+        ServerRowActions(
+            select = onSelectServer,
+            edit = onEditServer,
+            share = onShareServer,
+            more = onMoreServer,
+            remove = onRemoveServer,
+        )
+    }""",
+    """    val allowSharing = groupId != MoghimiCloudSync.CLOUD_GROUP_ID
+    val actions = remember(
+        onSelectServer,
+        onEditServer,
+        onShareServer,
+        onMoreServer,
+        onRemoveServer,
+        allowSharing,
+    ) {
+        ServerRowActions(
+            select = onSelectServer,
+            edit = onEditServer,
+            // Defense in depth: even an accidental callback cannot open an export dialog.
+            share = if (allowSharing) onShareServer else { _, _ -> },
+            more = if (allowSharing) onMoreServer else { _, _ -> },
+            remove = onRemoveServer,
+            allowSharing = allowSharing,
+        )
+    }""",
+    "cloud-group row actions"
+)
+
+replace_once(
+    pager,
+    """                if (doubleColumnDisplay) {
+                    IconButton(onClick = { actions.more(row.guid, row.profile) }, Modifier.size(36.dp)) {
+                        Icon(
+                            painterResource(R.drawable.ic_more_vert_24dp),
+                            stringResource(R.string.acc_more),
+                            Modifier.size(24.dp)
+                        )
+                    }
+                } else {
+                    IconButton(onClick = { actions.share(row.guid, row.profile) }, Modifier.size(36.dp)) {
+                        Icon(
+                            painterResource(R.drawable.ic_share_24dp),
+                            stringResource(R.string.title_configuration_share),
+                            Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = { actions.edit(row.guid, row.profile) }, Modifier.size(36.dp)) {""",
+    """                if (doubleColumnDisplay) {
+                    if (actions.allowSharing) {
+                        IconButton(onClick = { actions.more(row.guid, row.profile) }, Modifier.size(36.dp)) {
+                            Icon(
+                                painterResource(R.drawable.ic_more_vert_24dp),
+                                stringResource(R.string.acc_more),
+                                Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                } else {
+                    if (actions.allowSharing) {
+                        IconButton(onClick = { actions.share(row.guid, row.profile) }, Modifier.size(36.dp)) {
+                            Icon(
+                                painterResource(R.drawable.ic_share_24dp),
+                                stringResource(R.string.title_configuration_share),
+                                Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    IconButton(onClick = { actions.edit(row.guid, row.profile) }, Modifier.size(36.dp)) {""",
+    "hide cloud config share affordances"
+)
+
+# 2) Filter share/QR actions inside the shared dialog as an additional safeguard.
+import_menu = java / "ui/main/MainImportMenu.kt"
+replace_once(
+    import_menu,
+    """internal fun serverMenuActions(
+    isComplexProfile: Boolean,
+    includeManagementActions: Boolean,
+): List<ServerMenuAction> = ServerMenuAction.entries.filter { action ->
+    (includeManagementActions || action.isShareAction) && (!isComplexProfile || action.supportsComplexProfiles)
+}""",
+    """internal fun serverMenuActions(
+    isComplexProfile: Boolean,
+    includeManagementActions: Boolean,
+    allowSharing: Boolean = true,
+): List<ServerMenuAction> = ServerMenuAction.entries.filter { action ->
+    (allowSharing || !action.isShareAction) &&
+        (includeManagementActions || action.isShareAction) &&
+        (!isComplexProfile || action.supportsComplexProfiles)
+}""",
+    "server share action policy"
+)
+replace_once(
+    import_menu,
+    """fun ShareMethodDialog(
+    guid: String,
+    profile: ProfileItem,
+    more: Boolean,
+    onDismiss: () -> Unit,""",
+    """fun ShareMethodDialog(
+    guid: String,
+    profile: ProfileItem,
+    more: Boolean,
+    allowSharing: Boolean = true,
+    onDismiss: () -> Unit,""",
+    "dialog sharing permission"
+)
+replace_once(
+    import_menu,
+    """        isComplexProfile = profile.configType.isComplexType(),
+        includeManagementActions = more,
+    )""",
+    """        isComplexProfile = profile.configType.isComplexType(),
+        includeManagementActions = more,
+        allowSharing = allowSharing,
+    )""",
+    "apply dialog sharing permission"
+)
+
+# 3) Remove "Export all" from the overflow menu while the Moghimi group is selected.
+replace_once(
+    import_menu,
+    """@Composable
+fun MoreMenuContent(onSelected: (MainMoreMenuAction) -> Unit) = AppDropdownMenuItems(
+    items = MainMoreMenuAction.entries,
+    labelRes = { it.labelRes },
+    onSelected = onSelected
+)""",
+    """@Composable
+fun MoreMenuContent(
+    allowExportAll: Boolean = true,
+    onSelected: (MainMoreMenuAction) -> Unit
+) {
+    val visibleActions = if (allowExportAll) {
+        MainMoreMenuAction.entries
+    } else {
+        MainMoreMenuAction.entries.filterNot { it == MainMoreMenuAction.ExportAll }
+    }
+    AppDropdownMenuItems(
+        items = visibleActions,
+        labelRes = { it.labelRes },
+        onSelected = onSelected
+    )
+}""",
+    "filter cloud export menu item"
+)
+
+top_bar = java / "ui/main/MainTopBar.kt"
+replace_once(
+    top_bar,
+    """    onMenuClick: () -> Unit,
+    onCloudSyncClick: () -> Unit,
+    onAction: (MainAction) -> Unit,""",
+    """    onMenuClick: () -> Unit,
+    onCloudSyncClick: () -> Unit,
+    allowExportAll: Boolean = true,
+    onAction: (MainAction) -> Unit,""",
+    "top bar export menu policy"
+)
+replace_once(
+    top_bar,
+    """                    MoreMenuContent { action ->
+                        showMenu = false
+                        onMoreMenuAction(action)
+                    }""",
+    """                    MoreMenuContent(allowExportAll = allowExportAll) { action ->
+                        showMenu = false
+                        onMoreMenuAction(action)
+                    }""",
+    "apply filtered more menu"
+)
+
+screen = java / "ui/main/MainScreen.kt"
+replace_once(
+    screen,
+    """                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onCloudSyncClick = onCloudSyncClick,
+                    onAction = onAction,""",
+    """                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onCloudSyncClick = onCloudSyncClick,
+                    allowExportAll = uiState.selectedGroupId != MoghimiCloudSync.CLOUD_GROUP_ID,
+                    onAction = onAction,""",
+    "main screen export menu state"
+)
+replace_once(
+    screen,
+    """            more = more,
+            onDismiss = { shareTarget = null },""",
+    """            more = more,
+            allowSharing = uiState.selectedGroupId != MoghimiCloudSync.CLOUD_GROUP_ID,
+            onDismiss = { shareTarget = null },""",
+    "main screen share dialog policy"
+)
+
+# 4) Guard non-UI entry points: export-all and QR generation in the ViewModel.
+view_model = java / "ui/main/MainViewModel.kt"
+source = view_model.read_text(encoding="utf-8")
+if "import com.v2ray.ang.MoghimiCloudSync" not in source:
+    source = source.replace(
+        "import com.v2ray.ang.AppConfig\n",
+        "import com.v2ray.ang.AppConfig\nimport com.v2ray.ang.MoghimiCloudSync\n",
+        1
+    )
+view_model.write_text(source, encoding="utf-8")
+replace_once(
+    view_model,
+    """            is MainAction.ShareQRCode -> {
+                val bitmap = dataSource.share2QRCode(action.guid)
+                _uiState.update { it.copy(shareQRCodeBitmap = bitmap) }
+            }""",
+    """            is MainAction.ShareQRCode -> {
+                val profile = dataSource.decodeServerConfig(action.guid)
+                if (profile?.subscriptionId == MoghimiCloudSync.CLOUD_GROUP_ID) {
+                    toastError(R.string.toast_action_not_allowed)
+                } else {
+                    val bitmap = dataSource.share2QRCode(action.guid)
+                    _uiState.update { it.copy(shareQRCodeBitmap = bitmap) }
+                }
+            }""",
+    "block QR export for Moghimi profiles"
+)
+replace_once(
+    view_model,
+    """    private fun exportAllAsync() {
+        launchLoading {""",
+    """    private fun exportAllAsync() {
+        if (uiState.value.selectedGroupId == MoghimiCloudSync.CLOUD_GROUP_ID) {
+            toastError(R.string.toast_action_not_allowed)
+            return
+        }
+        launchLoading {""",
+    "block cloud group bulk export"
+)
+
+# 5) Guard the activity clipboard paths too, so a stale or direct action cannot export a cloud profile.
+activity = java / "ui/main/MainActivity.kt"
+replace_once(
+    activity,
+    """    private fun shareToClipboard(guid: String): Boolean =
+        AngConfigManager.share2Clipboard(this, guid) == 0
+
+    private fun shareFullContentAsync(guid: String) {
+        lifecycleScope.launch(Dispatchers.IO) {""",
+    """    private fun isMoghimiCloudProfile(guid: String): Boolean =
+        MmkvManager.decodeServerConfig(guid)?.subscriptionId == MoghimiCloudSync.CLOUD_GROUP_ID
+
+    private fun shareToClipboard(guid: String): Boolean {
+        if (isMoghimiCloudProfile(guid)) {
+            toastError(R.string.toast_action_not_allowed)
+            return false
+        }
+        return AngConfigManager.share2Clipboard(this, guid) == 0
+    }
+
+    private fun shareFullContentAsync(guid: String) {
+        if (isMoghimiCloudProfile(guid)) {
+            toastError(R.string.toast_action_not_allowed)
+            return
+        }
+        lifecycleScope.launch(Dispatchers.IO) {""",
+    "block activity clipboard exports"
+)
+
+print("Moghimi cloud profile copy/share restrictions applied.")
+PY
