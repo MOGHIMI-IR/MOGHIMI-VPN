@@ -87,8 +87,15 @@ fun MoghimiRootScreen(
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
-            com.v2ray.ang.MoghimiLicenseManager.checkForUpdate(context)
+            // Fetch the active release before profile/status calls. Older clients
+            // may receive HTTP 426 from status/register; that must not suppress
+            // the mandatory update dialog and the direct download notification.
+            runCatching {
+                com.v2ray.ang.MoghimiLicenseManager.checkForUpdate(context)
+            }
+            runCatching {
+                com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
+            }
         }
     }
     LaunchedEffect(license.isRegistered) {
@@ -103,7 +110,9 @@ fun MoghimiRootScreen(
         while (true) {
             kotlinx.coroutines.delay(60_000L)
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
+                runCatching {
+                    com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
+                }
             }
         }
     }
