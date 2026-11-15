@@ -144,7 +144,7 @@ jobs:
             fi
           done
 
-          sha256sum "$APK" > release-files/SHA256SUMS
+          (cd "$APK_DIR" && sha256sum "$(basename "$APK")") > release-files/SHA256SUMS
           cp "$APK" release-files/
           "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify --verbose --print-certs "$APK" > release-files/SIGNING.txt
           echo "Signing mode: ${MOGHIMI_SIGNING_MODE:-debug-fallback}" >> release-files/SIGNING.txt
