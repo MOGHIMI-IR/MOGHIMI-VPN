@@ -47,6 +47,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun MoghimiProfilePage() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val license by MoghimiLicenseManager.state.collectAsStateWithLifecycle()
     var username by rememberSaveable { mutableStateOf(MoghimiLicenseManager.username(context)) }
     var phone by rememberSaveable { mutableStateOf(MoghimiLicenseManager.phone(context)) }
@@ -95,7 +96,7 @@ fun MoghimiProfilePage() {
                     Button(
                         onClick = {
                             busy = true; error = null; message = null
-                            kotlinx.coroutines.MainScope().launch {
+                            scope.launch {
                                 try {
                                     withContext(Dispatchers.IO) {
                                         MoghimiLicenseManager.register(context, username, phone.ifBlank { null })
@@ -188,7 +189,7 @@ fun MoghimiProfilePage() {
                     Button(
                         onClick = {
                             busy = true; error = null; message = null
-                            kotlinx.coroutines.MainScope().launch {
+                            scope.launch {
                                 try {
                                     withContext(Dispatchers.IO) {
                                         MoghimiLicenseManager.claimActivationCode(context, activationCode)
