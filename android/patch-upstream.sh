@@ -837,11 +837,13 @@ replace_once(
         showSpeedStats = MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) == true
         if (speedNotificationJob != null || CoreServiceManager.isRunning() == false) return
 
-        val service = getService() ?: return
-        MoghimiLicenseManager.beginUsageSession(service.applicationContext)
-
-        var lastZeroSpeed = false
         speedNotificationJob = CoroutineScope(Dispatchers.IO).launch {
+            val service = getService() ?: return@launch
+            // Validate on the VPN service process's IO dispatcher, never block service main.
+            if (!MoghimiLicenseManager.beginUsageSession(service.applicationContext)) {
+                return@launch
+            }
+            var lastZeroSpeed = false
             while (isActive && CoreServiceManager.isRunning()) {
                 lastZeroSpeed = updateSpeedNotificationOnce(lastZeroSpeed)
                 delay(QUERY_INTERVAL_MS)
@@ -882,8 +884,8 @@ replace_once(
         getService()?.let { service ->
             MoghimiLicenseManager.recordTraffic(
                 service.applicationContext,
-                proxyUplink + directUplink,
-                proxyDownlink + directDownlink
+                proxyDownlink + directDownlink,
+                proxyUplink + directUplink
             )
         }
 
