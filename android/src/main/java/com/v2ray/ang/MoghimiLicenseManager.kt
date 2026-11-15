@@ -67,7 +67,10 @@ object MoghimiLicenseManager {
     private var meterSequence = 0L
     private var meterRxTotal = 0L
     private var meterTxTotal = 0L
+    private var meterReportedRxTotal = 0L
+    private var meterReportedTxTotal = 0L
     private var localRemainingBytes = Long.MAX_VALUE
+    private const val MAX_USAGE_REPORT_BYTES = 268435456L
 
     private fun prefs(context: Context) =
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -283,80 +286,138 @@ object MoghimiLicenseManager {
         return refreshStatus(context)
     }
 
-    fun beginUsageSession(context: Context) {
+    /**
+     * A fresh service process must verify entitlement itself. The UI process and the
+     * foreground VPN service do not share an in-memory StateFlow.
+     */
+    fun beginUsageSession(context: Context): Boolean {
+        val verified = refreshStatus(context.applicationContext)
         synchronized(meterLock) {
             meterSessionId = UUID.randomUUID().toString()
             meterSequence = 0L
             meterRxTotal = 0L
             meterTxTotal = 0L
-            localRemainingBytes = mutableState.value.totalRemainingBytes
+            meterReportedRxTotal = 0L
+            meterReportedTxTotal = 0L
+            localRemainingBytes = if (verified.isRegistered && verified.accessAllowed) {
+                verified.totalRemainingBytes
+            } else {
+                0L
+            }
         }
+        if (!verified.isRegistered || !verified.accessAllowed || verified.totalRemainingBytes <= 0L) {
+            stopTunnelForQuota(context)
+            return false
+        }
+        return true
     }
 
     /**
-     * Xray exposes byte counters per outbound. CoreServiceManager supplies the sum of
-     * upload and download deltas excluding blocked traffic. The backend is authoritative;
-     * a local remaining-byte guard stops the tunnel if reporting temporarily goes offline.
+     * Receives byte deltas from Xray's reset-on-query counters. Upload and download
+     * are accumulated locally, then reported using monotonic cumulative counters.
+     * Reports are chunked below the server's 256 MiB safety ceiling so a slow network
+     * cannot permanently poison a usage session with an oversized report.
      */
     fun recordTraffic(context: Context, rxDelta: Long, txDelta: Long): Boolean {
-        if (rxDelta <= 0 && txDelta <= 0) return mutableState.value.accessAllowed
-        val session: String
-        val sequence: Long
-        val rx: Long
-        val tx: Long
+        if (rxDelta <= 0L && txDelta <= 0L) {
+            val allowed = mutableState.value.accessAllowed
+            if (!allowed) stopTunnelForQuota(context)
+            return allowed
+        }
+
+        var reachedLocalLimit = false
         synchronized(meterLock) {
             if (meterSessionId.isNullOrBlank()) {
+                // This fallback is deliberately fail-closed. Normal startup calls
+                // beginUsageSession() after validating the device on the service process.
                 meterSessionId = UUID.randomUUID().toString()
                 meterSequence = 0L
                 meterRxTotal = 0L
                 meterTxTotal = 0L
-                localRemainingBytes = mutableState.value.totalRemainingBytes
+                meterReportedRxTotal = 0L
+                meterReportedTxTotal = 0L
+                localRemainingBytes = 0L
             }
-            meterRxTotal += rxDelta.coerceAtLeast(0)
-            meterTxTotal += txDelta.coerceAtLeast(0)
-            localRemainingBytes = (localRemainingBytes - rxDelta.coerceAtLeast(0) - txDelta.coerceAtLeast(0)).coerceAtLeast(0)
-            session = meterSessionId!!
-            sequence = meterSequence + 1
-            rx = meterRxTotal
-            tx = meterTxTotal
+            val before = localRemainingBytes
+            meterRxTotal = Math.addExact(meterRxTotal, rxDelta.coerceAtLeast(0L))
+            meterTxTotal = Math.addExact(meterTxTotal, txDelta.coerceAtLeast(0L))
+            val consumed = Math.addExact(rxDelta.coerceAtLeast(0L), txDelta.coerceAtLeast(0L))
+            localRemainingBytes = (localRemainingBytes - consumed).coerceAtLeast(0L)
+            reachedLocalLimit = before > 0L && localRemainingBytes == 0L
         }
 
-        return try {
-            val request = baseRequest(context, "usage")
-                .put("session_id", session)
-                .put("sequence", sequence)
-                .put("rx_total", rx)
-                .put("tx_total", tx)
-            val result = callApi(request)
-            val accepted = result.optBoolean("ok") && (result.optBoolean("duplicate") || result.has("accepted_bytes"))
-            if (!accepted) throw IllegalStateException(errorMessage(result.optString("code"), 409))
+        // Stop the tunnel immediately when the last locally verified byte is observed.
+        // The final measured counters are still submitted below for server accounting.
+        if (reachedLocalLimit) stopTunnelForQuota(context)
 
-            val updated = MoghimiLicenseUiState(
-                isRegistered = true,
-                username = username(context),
-                phone = phone(context),
-                freeUsedBytes = result.optLong("free_used_bytes"),
-                freeLimitBytes = result.optLong("free_limit_bytes", 5L * 1024 * 1024 * 1024),
-                freeRemainingBytes = result.optLong("free_remaining_bytes"),
-                paidRemainingBytes = result.optLong("paid_remaining_bytes"),
-                paidExpiresAt = result.optString("paid_expires_at").takeIf { it.isNotBlank() && it != "null" },
-                accessAllowed = result.optBoolean("access_allowed")
-            )
-            synchronized(meterLock) {
-                meterSequence = sequence
-                localRemainingBytes = updated.totalRemainingBytes
+        try {
+            while (true) {
+                val session: String
+                val sequence: Long
+                val reportRx: Long
+                val reportTx: Long
+
+                synchronized(meterLock) {
+                    val pendingRx = (meterRxTotal - meterReportedRxTotal).coerceAtLeast(0L)
+                    val pendingTx = (meterTxTotal - meterReportedTxTotal).coerceAtLeast(0L)
+                    if (pendingRx == 0L && pendingTx == 0L) {
+                        return mutableState.value.accessAllowed && localRemainingBytes > 0L
+                    }
+
+                    val rxChunk = minOf(pendingRx, MAX_USAGE_REPORT_BYTES)
+                    val txChunk = minOf(pendingTx, MAX_USAGE_REPORT_BYTES - rxChunk)
+                    meterSequence += 1L
+                    sequence = meterSequence
+                    reportRx = meterReportedRxTotal + rxChunk
+                    reportTx = meterReportedTxTotal + txChunk
+                    session = meterSessionId!!
+                }
+
+                val request = baseRequest(context, "usage")
+                    .put("session_id", session)
+                    .put("sequence", sequence)
+                    .put("rx_total", reportRx)
+                    .put("tx_total", reportTx)
+                val result = callApi(request)
+                val accepted = result.optBoolean("ok") &&
+                    (result.optBoolean("duplicate") || result.has("accepted_bytes"))
+                if (!accepted) {
+                    throw IllegalStateException(errorMessage(result.optString("code"), 409))
+                }
+
+                val updated = MoghimiLicenseUiState(
+                    isRegistered = true,
+                    username = username(context),
+                    phone = phone(context),
+                    freeUsedBytes = result.optLong("free_used_bytes"),
+                    freeLimitBytes = result.optLong("free_limit_bytes", 5L * 1024 * 1024 * 1024),
+                    freeRemainingBytes = result.optLong("free_remaining_bytes"),
+                    paidRemainingBytes = result.optLong("paid_remaining_bytes"),
+                    paidExpiresAt = result.optString("paid_expires_at")
+                        .takeIf { it.isNotBlank() && it != "null" },
+                    accessAllowed = result.optBoolean("access_allowed")
+                )
+
+                synchronized(meterLock) {
+                    meterReportedRxTotal = reportRx
+                    meterReportedTxTotal = reportTx
+                    localRemainingBytes = minOf(localRemainingBytes, updated.totalRemainingBytes)
+                }
+                mutableState.value = updated
+
+                if (!updated.accessAllowed || updated.totalRemainingBytes <= 0L) {
+                    stopTunnelForQuota(context)
+                    return false
+                }
             }
-            mutableState.value = updated
-            if (!updated.accessAllowed) stopTunnelForQuota(context)
-            updated.accessAllowed
         } catch (error: Exception) {
-            val allowed = synchronized(meterLock) { localRemainingBytes > 0 && mutableState.value.accessAllowed }
-            if (!allowed) {
-                stopTunnelForQuota(context)
-                false
-            } else {
-                true
+            val allowed = synchronized(meterLock) {
+                localRemainingBytes > 0L && mutableState.value.accessAllowed
             }
+            if (!allowed) stopTunnelForQuota(context)
+            // Unacknowledged cumulative bytes are retained in memory. The next meter
+            // tick retries them with a chunk size accepted by the backend.
+            return allowed
         }
     }
 
