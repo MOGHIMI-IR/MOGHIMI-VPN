@@ -15,6 +15,8 @@ fi
 
 mkdir -p "$JAVA"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/MoghimiCloudSync.kt" "$JAVA/MoghimiCloudSync.kt"
+cp "$ROOT/android/src/main/java/com/v2ray/ang/MoghimiLicenseManager.kt" "$JAVA/MoghimiLicenseManager.kt"
+cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiProfilePage.kt" "$JAVA/ui/main/MoghimiProfilePage.kt"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/MoghimiSyncWorker.kt" "$JAVA/MoghimiSyncWorker.kt"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiHomeHeader.kt" "$JAVA/ui/main/MoghimiHomeHeader.kt"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiDashboard.kt" "$JAVA/ui/main/MoghimiDashboard.kt"
@@ -636,7 +638,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 )
 activity = activity.replace(
     "class MainActivity : HelperBaseComponentActivity() {\n",
-    "class MainActivity : HelperBaseComponentActivity() {\n\n    private var moghimiSyncRunning = false\n    private var bestServerScanRunning = false\n",
+    "class MainActivity : HelperBaseComponentActivity() {\n\n    private var moghimiSyncRunning = false\n",
     1
 )
 main_activity_file.write_text(activity, encoding="utf-8")
@@ -693,7 +695,7 @@ methods = """    private fun scheduleMoghimiBackgroundSync() {
         lifecycleScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    MoghimiCloudSync.sync()
+                    MoghimiCloudSync.sync(applicationContext)
                 }
                 mainViewModel.setupGroupTab(forceRefresh = true).join()
                 if (autoSelect && result.importedProfiles > 0) {
@@ -801,370 +803,102 @@ launcher.write_text(
 )
 
 
-# Automatic startup scan across every saved profile, with guarded best-server selection.
-contract_file = java / "ui/main/MainContract.kt"
+# Feed byte counters from the same Xray stats query used by the speed notification.
+# Metering stays active even when the user disables the visual speed notification.
+notification_file = java / "handler/NotificationManager.kt"
 replace_once(
-    contract_file,
-    "    val status: MainStatus = MainStatus.Disconnected,\n",
-    "    val status: MainStatus = MainStatus.Disconnected,\n    val activeTunnelPingMillis: Long? = null,\n",
-    "separate active tunnel ping state"
+    notification_file,
+    "import com.v2ray.ang.core.CoreServiceManager\n",
+    "import com.v2ray.ang.core.CoreServiceManager\nimport com.v2ray.ang.MoghimiLicenseManager\n",
+    "Moghimi traffic meter import"
 )
+replace_once(
+    notification_file,
+    "    private var speedNotificationJob: Job? = null\n",
+    "    private var speedNotificationJob: Job? = null\n    private var showSpeedStats = false\n",
+    "independent visual speed preference"
+)
+replace_once(
+    notification_file,
+    """    fun startSpeedNotification() {
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) != true) return
+        if (speedNotificationJob != null || CoreServiceManager.isRunning() == false) return
 
-requests_file = java / "ui/main/MainTestRequests.kt"
-replace_once(
-    requests_file,
-    "    data class Bulk(val id: String, val groupId: String)\n",
-    """    data class Bulk(
-        val id: String,
-        val groupId: String,
-        val autoSelectBest: Boolean = false,
-        val initialSelectedGuid: String? = null,
-        val initialSelectedGroupId: String = "",
-        val testedGuids: List<String> = emptyList()
-    )
-""",
-    "auto-select metadata for bulk test requests"
-)
-replace_once(
-    requests_file,
-    "    fun beginBulk(groupId: String): Bulk = Bulk(UUID.randomUUID().toString(), groupId).also { bulk = it }\n",
-    """    fun beginBulk(
-        groupId: String,
-        autoSelectBest: Boolean = false,
-        initialSelectedGuid: String? = null,
-        initialSelectedGroupId: String = "",
-        testedGuids: List<String> = emptyList()
-    ): Bulk = Bulk(
-        id = UUID.randomUUID().toString(),
-        groupId = groupId,
-        autoSelectBest = autoSelectBest,
-        initialSelectedGuid = initialSelectedGuid,
-        initialSelectedGroupId = initialSelectedGroupId,
-        testedGuids = testedGuids
-    ).also { bulk = it }
-""",
-    "bulk request metadata builder"
-)
+        var lastZeroSpeed = false
 
-view_model_file = java / "ui/main/MainViewModel.kt"
-view_model = view_model_file.read_text(encoding="utf-8")
-if "import kotlinx.coroutines.flow.first\n" not in view_model:
-    replace_once(
-        view_model_file,
-        "import kotlinx.coroutines.flow.asStateFlow\n",
-        "import kotlinx.coroutines.flow.asStateFlow\nimport kotlinx.coroutines.flow.first\n",
-        "StateFlow first import for startup scan"
-    )
-if "import kotlinx.coroutines.withTimeoutOrNull\n" not in view_model:
-    replace_once(
-        view_model_file,
-        "import kotlinx.coroutines.withContext\n",
-        "import kotlinx.coroutines.withContext\nimport kotlinx.coroutines.withTimeoutOrNull\n",
-        "timeout import for current ping coordination"
-    )
-replace_once(
-    view_model_file,
-    "    private var bulkTestJob: Job? = null\n",
-    "    private var bulkTestJob: Job? = null\n    private var autoBestConfigJob: Job? = null\n    private var pendingBestConfigCallback: ((Boolean) -> Unit)? = null\n",
-    "startup best-config job state"
-)
-
-replace_once(
-    view_model_file,
-    """            is MainServiceEvent.MeasureDelayResult -> {
-                if (!uiState.value.isRunning) return
-                _uiState.update { it.copy(isTesting = false, status = MainStatus.ConnectionTest(event.result)) }
-            }""",
-    """            is MainServiceEvent.MeasureDelayResult -> {
-                if (!uiState.value.isRunning) return
-                if (!testRequests.completeCurrent(event.requestId)) return
-                _uiState.update { state ->
-                    state.copy(
-                        isTesting = testRequests.isTesting,
-                        status = if (testRequests.bulk != null) state.status
-                        else MainStatus.ConnectionTest(event.result),
-                        activeTunnelPingMillis = event.result.delayMillis
-                    )
-                }
-            }""",
-    "track active tunnel ping independently from batch scan"
-)
-replace_once(
-    view_model_file,
-    """            is MainServiceEvent.MeasureDelayCancelled -> {
-                //if (testRequests.completeCurrent(event.requestId)) resetTestStatus()
-            }""",
-    """            is MainServiceEvent.MeasureDelayCancelled -> {
-                if (testRequests.completeCurrent(event.requestId)) resetTestStatus()
-            }""",
-    "complete cancelled active tunnel ping request"
-)
-replace_once(
-    view_model_file,
-    """    fun testCurrentServerRealPing() {
-        if (!uiState.value.isRunning) return
-        _uiState.update { it.copy(isTesting = true, status = MainStatus.Testing) }
-        dataSource.testCurrentServerRealPing("")
-    }""",
-    """    fun testCurrentServerRealPing() {
-        if (!uiState.value.isRunning || testRequests.isTesting) return
-        val requestId = testRequests.beginCurrent()
-        _uiState.update { it.copy(isTesting = true, status = MainStatus.Testing) }
-        dataSource.testCurrentServerRealPing(requestId)
-    }""",
-    "use owned request id for active tunnel ping"
-)
-replace_once(
-    view_model_file,
-    """    private fun onTestsFinished(requestId: String) {
-        if (testRequests.completeBulk(requestId) == null) return
-        resetTestStatus()
-        viewModelScope.launch(ioDispatcher) {
-            cacheMutex.withLock { groupDataCache.clear() }
-            reloadAllGroups(_uiState.value.groups.map { it.id })
+        speedNotificationJob = CoroutineScope(Dispatchers.IO).launch {
+            while (isActive) {
+                lastZeroSpeed = updateSpeedNotificationOnce(lastZeroSpeed)
+                delay(QUERY_INTERVAL_MS)
+            }
         }
     }""",
-    """    private fun finishBestConfigSelection(success: Boolean) {
-        val callback = pendingBestConfigCallback
-        pendingBestConfigCallback = null
-        callback?.invoke(success)
-    }
+    """    fun startSpeedNotification() {
+        showSpeedStats = MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) == true
+        if (speedNotificationJob != null || CoreServiceManager.isRunning() == false) return
 
-    private fun onTestsFinished(requestId: String) {
-        val request = testRequests.completeBulk(requestId) ?: return
-        if (request.autoSelectBest) {
-            selectBestTestedServer(request) { success ->
-                resetTestStatus()
-                finishBestConfigSelection(success)
-            }
-        } else {
-            resetTestStatus()
-        }
-        viewModelScope.launch(ioDispatcher) {
-            cacheMutex.withLock { groupDataCache.clear() }
-            reloadAllGroups(_uiState.value.groups.map { it.id })
-        }
-    }
+        val service = getService() ?: return
+        MoghimiLicenseManager.beginUsageSession(service.applicationContext)
 
-    private fun selectBestTestedServer(
-        request: MainTestRequests.Bulk,
-        onComplete: (Boolean) -> Unit
-    ) {
-        viewModelScope.launch {
-            val initialState = uiState.value
-            if (initialState.isRunning) {
-                onComplete(false)
-                return@launch
-            }
-
-            // A selection changed by the user while tests were running takes priority.
-            if (
-                initialState.selectedGuid != request.initialSelectedGuid ||
-                initialState.selectedGroupId != request.initialSelectedGroupId
-            ) {
-                onComplete(!initialState.selectedGuid.isNullOrBlank())
-                return@launch
-            }
-
-            val best = withContext(ioDispatcher) {
-                val stillSaved = dataSource.getServerGuidList("").toHashSet()
-                request.testedGuids.asSequence()
-                    .filter { guid -> guid in stillSaved }
-                    .mapNotNull { guid ->
-                        val delayMillis =
-                            dataSource.decodeAffiliationInfo(guid)?.testDelayMillis ?: 0L
-                        if (delayMillis <= 0L) return@mapNotNull null
-                        val profile = dataSource.decodeServerConfig(guid)
-                            ?: return@mapNotNull null
-                        Triple(guid, delayMillis, profile.subscriptionId)
-                    }
-                    .minWithOrNull(
-                        compareBy<Triple<String, Long, String>> { it.second }
-                            .thenBy { if (it.first == request.initialSelectedGuid) 0 else 1 }
-                            .thenBy { it.first }
-                    )
-            }
-            if (best == null) {
-                onComplete(false)
-                return@launch
-            }
-
-            val latestState = uiState.value
-            if (latestState.isRunning) {
-                onComplete(false)
-                return@launch
-            }
-            if (
-                latestState.selectedGuid != request.initialSelectedGuid ||
-                latestState.selectedGroupId != request.initialSelectedGroupId
-            ) {
-                onComplete(!latestState.selectedGuid.isNullOrBlank())
-                return@launch
-            }
-
-            updateSelectedGuid(best.first)
-            if (latestState.groups.any { it.id == best.third }) {
-                subscriptionIdChanged(best.third)
-            }
-            onComplete(true)
-        }
-    }
-
-    /**
-     * Run outbound-delay tests only after the user presses Connect.
-     * The callback is invoked after the best profile has been selected.
-     */
-    fun autoTestAllConfigsAndSelectBest(onComplete: (Boolean) -> Unit): Job {
-        autoBestConfigJob?.takeIf { it.isActive }?.let {
-            onComplete(false)
-            return it
-        }
-        pendingBestConfigCallback = onComplete
-        val job = viewModelScope.launch {
-            try {
-                setupGroupJob?.join()
-                preloadJob?.join()
-
-                // Another explicit batch test has priority.
-                if (testRequests.bulk != null) {
-                    finishBestConfigSelection(false)
-                    return@launch
-                }
-                if (testRequests.isTesting) {
-                    val idleState = withTimeoutOrNull(20_000L) {
-                        uiState.first { state -> !state.isTesting }
-                    }
-                    if (idleState == null) {
-                        finishBestConfigSelection(false)
-                        return@launch
-                    }
-                }
-                if (testRequests.isTesting || testRequests.bulk != null) {
-                    finishBestConfigSelection(false)
-                    return@launch
-                }
-
-                val allServerGuids = withContext(ioDispatcher) {
-                    dataSource.getServerGuidList("")
-                        .distinct()
-                        .filter { guid -> dataSource.decodeServerConfig(guid) != null }
-                }
-                if (allServerGuids.isEmpty()) {
-                    finishBestConfigSelection(false)
-                    return@launch
-                }
-
-                val resetServers = withContext(ioDispatcher) {
-                    buildServersCache(allServerGuids)
-                        .map { server -> server.copy(testDelayMillis = 0L) }
-                }
-                val resetRows = withContext(ioDispatcher) {
-                    buildServerRows("", resetServers)
-                }
-                cacheMutex.withLock {
-                    groupDataCache[""] = resetServers
-                }
-                mutableServerGroupState("").value = ServerGroupUiState(
-                    servers = resetServers,
-                    rows = resetRows
-                )
-
-                val baseline = uiState.value
-                val request = testRequests.beginBulk(
-                    groupId = "",
-                    autoSelectBest = true,
-                    initialSelectedGuid = baseline.selectedGuid,
-                    initialSelectedGroupId = baseline.selectedGroupId,
-                    testedGuids = allServerGuids
-                )
-                _uiState.update {
-                    it.copy(isTesting = true, status = MainStatus.Testing)
-                }
-
-                bulkTestJob = viewModelScope.launch {
-                    try {
-                        withContext(ioDispatcher) {
-                            dataSource.clearAllTestDelayResults(allServerGuids)
-                            dataSource.sendMsg2TestService(
-                                TestServiceMessage(
-                                    key = AppConfig.MSG_MEASURE_CONFIG_START,
-                                    subscriptionId = "",
-                                    serverGuids = allServerGuids,
-                                    onlyTcp = false
-                                ),
-                                request.id
-                            )
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        if (testRequests.completeBulk(request.id) != null) {
-                            cancelPendingTestResults()
-                            resetTestStatus()
-                            finishBestConfigSelection(false)
-                        }
-                        LogUtil.e(
-                            AppConfig.TAG,
-                            "Connect-time all-config latency scan failed",
-                            error
-                        )
-                    }
-                }
-            } catch (cancelled: CancellationException) {
-                finishBestConfigSelection(false)
-                throw cancelled
-            } catch (error: Exception) {
-                resetTestStatus()
-                finishBestConfigSelection(false)
-                LogUtil.e(
-                    AppConfig.TAG,
-                    "Failed to prepare connect-time best-server scan",
-                    error
-                )
+        var lastZeroSpeed = false
+        speedNotificationJob = CoroutineScope(Dispatchers.IO).launch {
+            while (isActive && CoreServiceManager.isRunning()) {
+                lastZeroSpeed = updateSpeedNotificationOnce(lastZeroSpeed)
+                delay(QUERY_INTERVAL_MS)
             }
         }
-        autoBestConfigJob = job
-        return job
     }""",
-    "connect-time all-profile test and guarded best selection"
+    "start quota metering independently from speed notification setting"
 )
 replace_once(
-    view_model_file,
-    """                status = if (!clearTestingText && state.isRunning == running) state.status
-                else if (running) MainStatus.Connected else MainStatus.Disconnected
-            )""",
-    """                status = if (!clearTestingText && state.isRunning == running) state.status
-                else if (running) MainStatus.Connected else MainStatus.Disconnected,
-                activeTunnelPingMillis = if (!running || clearTestingText) {
-                    null
-                } else {
-                    state.activeTunnelPingMillis
-                }
-            )""",
-    "reset active tunnel ping when connection state changes"
+    notification_file,
+    """    fun stopSpeedNotification() {
+        speedNotificationJob?.let {
+            it.cancel()
+            speedNotificationJob = null
+            updateNotification("", 0, 0)
+        }
+    }""",
+    """    fun stopSpeedNotification() {
+        // Hide speed text only. The same Xray counters are also the subscription meter,
+        // so the polling job must keep running while the VPN tunnel is active.
+        showSpeedStats = false
+        updateNotification("", 0, 0)
+    }""",
+    "keep quota meter active when speed notification is hidden"
 )
-
-# Cloud sync completes before the automatic scan so freshly downloaded profiles are included.
 replace_once(
-    main_activity_file,
-    """                moghimiSyncRunning = false
-            }
-        }
-    }
+    notification_file,
+    """        val proxyTotal = proxyUplink + proxyDownlink
+        val directTotal = directUplink + directDownlink
+        val zeroSpeed = proxyTotal + directTotal == 0L
+        if (!zeroSpeed || !lastZeroSpeed) {""",
+    """        val proxyTotal = proxyUplink + proxyDownlink
+        val directTotal = directUplink + directDownlink
+        val zeroSpeed = proxyTotal + directTotal == 0L
 
-    private fun shareToClipboard(guid: String): Boolean =""",
-    """                moghimiSyncRunning = false
-            }
+        // Xray reports byte deltas for every outbound, including direct routes.
+        // Blocked traffic is excluded above; both upload and download are billed.
+        getService()?.let { service ->
+            MoghimiLicenseManager.recordTraffic(
+                service.applicationContext,
+                proxyUplink + directUplink,
+                proxyDownlink + directDownlink
+            )
         }
-    }
 
-    private fun shareToClipboard(guid: String): Boolean =""",
-    "run all-profile latency scan after startup cloud sync"
+        if (showSpeedStats && (!zeroSpeed || !lastZeroSpeed)) {""",
+    "record exact Xray outbound upload and download deltas"
 )
 
-print("Automatic all-profile real-latency scan and guarded best-config selection applied.")
+print("Moghimi branding and Xray traffic meter patch applied.")
+PY
 
-print("Moghimi branding, cloud sync and automatic best-config selection patch applied.")
+python3 "$ROOT/android/patch-updater.py" "$PROJECT"
+
+echo "Prepared branded Android source under $PROJECT"
+
+
 PY
 
 python3 "$ROOT/android/patch-updater.py" "$PROJECT"
