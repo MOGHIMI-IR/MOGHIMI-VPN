@@ -58,7 +58,10 @@ fun MoghimiProfilePage() {
     var message by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) { MoghimiLicenseManager.refreshStatus(context) }
+        while (true) {
+            withContext(Dispatchers.IO) { MoghimiLicenseManager.refreshStatus(context) }
+            kotlinx.coroutines.delay(15_000L)
+        }
     }
 
     Column(
@@ -136,6 +139,13 @@ fun MoghimiProfilePage() {
                         }
                     }
                     Spacer(Modifier.height(4.dp))
+                    Text("مصرف کل (رایگان و خریداری‌شده)", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        MoghimiLicenseManager.formatBytes(license.freeUsedBytes + license.paidUsedBytes) +
+                            " از " + MoghimiLicenseManager.formatBytes(license.freeLimitBytes + license.paidGrantedBytes),
+                        color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold
+                    )
                     Text("سهمیه رایگان این ماه", color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall)
                     Text(
@@ -151,10 +161,15 @@ fun MoghimiProfilePage() {
                     Text("باقی‌مانده رایگان: " + MoghimiLicenseManager.formatBytes(license.freeRemainingBytes),
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Spacer(Modifier.height(6.dp))
-                    Text("اشتراک خریداری‌شده", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Text("مصرف بسته‌های خریداری‌شده", color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall)
-                    Text(MoghimiLicenseManager.formatBytes(license.paidRemainingBytes),
-                        color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold)
+                    Text(
+                        MoghimiLicenseManager.formatBytes(license.paidUsedBytes) + " از " +
+                            MoghimiLicenseManager.formatBytes(license.paidGrantedBytes),
+                        color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold
+                    )
+                    Text("باقی‌مانده بسته‌ها: " + MoghimiLicenseManager.formatBytes(license.paidRemainingBytes),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     license.paidExpiresAt?.let {
                         Text("اعتبار تا: " + it.replace("T", " ").take(16),
                             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)

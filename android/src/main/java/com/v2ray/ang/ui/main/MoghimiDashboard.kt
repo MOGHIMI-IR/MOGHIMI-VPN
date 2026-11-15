@@ -154,6 +154,8 @@ fun MoghimiRootScreen(
                 }
             }
 
+            MoghimiStartupSupportDialog()
+
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
                 contentColor = MaterialTheme.colorScheme.onSurface,
@@ -248,7 +250,7 @@ private fun MoghimiConnectionPage(
     val pingStatusText = when {
         !running || selectedServer == null -> "—"
         uiState.isTesting -> "در حال سنجش"
-        measuredPingMillis == null -> "در انتظار"
+        measuredPingMillis == null -> "برای سنجش لمس کن"
         measuredPingMillis >= 0L -> "$measuredPingMillis ms"
         else -> "ناموفق"
     }
@@ -756,6 +758,8 @@ private fun MoghimiSettingsPage(
                 )
             }
         }
+
+        MoghimiSupportSettingsSection()
     }
 }
 

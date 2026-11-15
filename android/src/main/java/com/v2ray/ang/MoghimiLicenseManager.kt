@@ -32,6 +32,8 @@ data class MoghimiLicenseUiState(
     val freeLimitBytes: Long = 5L * 1024 * 1024 * 1024,
     val freeRemainingBytes: Long = 5L * 1024 * 1024 * 1024,
     val paidRemainingBytes: Long = 0,
+    val paidUsedBytes: Long = 0,
+    val paidGrantedBytes: Long = 0,
     val paidExpiresAt: String? = null,
     val accessAllowed: Boolean = false,
     val isLoading: Boolean = false,
@@ -156,7 +158,7 @@ object MoghimiLicenseManager {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             // Publishable key only; no service-role or database secret is shipped in the APK.
             setRequestProperty("apikey", API_KEY)
-            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.1")
+            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.2")
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -269,6 +271,8 @@ object MoghimiLicenseManager {
             freeLimitBytes = result.optLong("free_limit_bytes", 5L * 1024 * 1024 * 1024),
             freeRemainingBytes = result.optLong("free_remaining_bytes"),
             paidRemainingBytes = result.optLong("paid_remaining_bytes"),
+            paidUsedBytes = result.optLong("paid_used_bytes"),
+            paidGrantedBytes = result.optLong("paid_granted_bytes"),
             paidExpiresAt = result.optString("paid_expires_at").takeIf { it.isNotBlank() && it != "null" },
             accessAllowed = result.optBoolean("access_allowed")
         )
@@ -414,6 +418,8 @@ object MoghimiLicenseManager {
                     freeLimitBytes = result.optLong("free_limit_bytes", 5L * 1024 * 1024 * 1024),
                     freeRemainingBytes = result.optLong("free_remaining_bytes"),
                     paidRemainingBytes = result.optLong("paid_remaining_bytes"),
+                    paidUsedBytes = result.optLong("paid_used_bytes"),
+                    paidGrantedBytes = result.optLong("paid_granted_bytes"),
                     paidExpiresAt = result.optString("paid_expires_at")
                         .takeIf { it.isNotBlank() && it != "null" },
                     accessAllowed = result.optBoolean("access_allowed")

@@ -20,6 +20,7 @@ cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiProfilePage.kt" "$J
 cp "$ROOT/android/src/main/java/com/v2ray/ang/MoghimiSyncWorker.kt" "$JAVA/MoghimiSyncWorker.kt"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiHomeHeader.kt" "$JAVA/ui/main/MoghimiHomeHeader.kt"
 cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiDashboard.kt" "$JAVA/ui/main/MoghimiDashboard.kt"
+cp "$ROOT/android/src/main/java/com/v2ray/ang/ui/main/MoghimiSupport.kt" "$JAVA/ui/main/MoghimiSupport.kt"
 mkdir -p "$RES/font" "$RES/drawable" "$RES/drawable-nodpi"
 cp "$ROOT/android/src/main/res/font/tanha.ttf" "$RES/font/tanha.ttf"
 cp "$ROOT/android/src/main/res/drawable-nodpi/moghimi_logo.webp" "$RES/drawable-nodpi/moghimi_logo.webp"
@@ -48,7 +49,7 @@ source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
     ("versionCode = 755", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
-    ('versionName = "2.3.15"', 'versionName = "2.0.1"', "versionName"),
+    ('versionName = "2.3.15"', 'versionName = "2.0.2"', "versionName"),
 ]:
     if source.count(old) != 1:
         raise SystemExit(f"Expected one Gradle match for {label}")
@@ -904,5 +905,148 @@ print("Moghimi branding and Xray traffic meter patch applied.")
 PY
 
 python3 "$ROOT/android/patch-updater.py" "$PROJECT"
+
+# Keep Xray byte counters enabled for subscription accounting even when the
+# user has turned off the optional notification speed display.
+python3 - "$PROJECT" <<'PY'
+from pathlib import Path
+import sys
+
+project = Path(sys.argv[1])
+java = project / "app/src/main/java/com/v2ray/ang"
+
+def replace_once(path: Path, old: str, new: str, label: str):
+    source = path.read_text(encoding="utf-8")
+    count = source.count(old)
+    if count != 1:
+        raise SystemExit(f"Expected one match for {label}; found {count}")
+    path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+core_config = java / "core/CoreConfigManager.kt"
+replace_once(
+    core_config,
+    """        // Inject or remove traffic statistics configuration based on user preference
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) == true) {
+            if (!json.has("stats")) {
+                json.add("stats", JsonObject())
+            }
+            if (!json.has("policy")) {
+                val policyObj = JsonObject()
+                val systemObj = JsonObject()
+                systemObj.addProperty("statsOutboundUplink", true)
+                systemObj.addProperty("statsOutboundDownlink", true)
+                policyObj.add("system", systemObj)
+                json.add("policy", policyObj)
+            }
+        } else {
+            json.remove("stats")
+            // Keep user-defined policy levels, only strip the stats-related system block
+            json.get("policy")?.takeIf { it.isJsonObject }?.asJsonObject?.let { policy ->
+                policy.remove("system")
+                if (policy.entrySet().isEmpty()) {
+                    json.remove("policy")
+                }
+            }
+        }""",
+    """        // Xray traffic counters are required for Moghimi subscription accounting.
+        // NotificationManager separately controls whether speed values are shown.
+        if (!json.has("stats")) {
+            json.add("stats", JsonObject())
+        }
+        val policyObj = json.get("policy")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: JsonObject().also { json.add("policy", it) }
+        val systemObj = policyObj.get("system")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: JsonObject().also { policyObj.add("system", it) }
+        systemObj.addProperty("statsOutboundUplink", true)
+        systemObj.addProperty("statsOutboundDownlink", true)""",
+    "keep custom-profile Xray counters enabled"
+)
+
+replace_once(
+    core_config,
+    """    private fun applySpeedDisabled(v2rayConfig: V2rayConfig) {
+        if (MmkvManager.decodeSettingsBool(AppConfig.PREF_SPEED_ENABLED) != true) {
+            v2rayConfig.stats = null
+            v2rayConfig.policy?.system = null
+        }
+    }""",
+    """    private fun applySpeedDisabled(v2rayConfig: V2rayConfig) {
+        // Do not strip stats or policy.system: the Moghimi subscription meter
+        // needs reset-on-query Xray counters. Visual speed text remains optional.
+    }""",
+    "preserve Xray counters in generated profiles"
+)
+
+val vm = java / "ui/main/MainViewModel.kt"
+replace_once(
+    vm,
+    "import java.util.concurrent.ConcurrentHashMap\n",
+    "import java.util.UUID\nimport java.util.concurrent.ConcurrentHashMap\n",
+    "ping request UUID import"
+)
+replace_once(
+    vm,
+    "    private var bulkTestJob: Job? = null\n",
+    "    private var bulkTestJob: Job? = null\n    private var currentPingTimeoutJob: Job? = null\n    private var currentPingRequestId: String? = null\n",
+    "single-server ping timeout state"
+)
+replace_once(
+    vm,
+    """            is MainServiceEvent.MeasureDelayResult -> {
+                if (!uiState.value.isRunning) return
+                _uiState.update { it.copy(isTesting = false, status = MainStatus.ConnectionTest(event.result)) }
+            }""",
+    """            is MainServiceEvent.MeasureDelayResult -> {
+                currentPingTimeoutJob?.cancel()
+                currentPingTimeoutJob = null
+                currentPingRequestId = null
+                if (!uiState.value.isRunning) return
+                _uiState.update { it.copy(isTesting = false, status = MainStatus.ConnectionTest(event.result)) }
+            }""",
+    "clear ping timeout after real result"
+)
+replace_once(
+    vm,
+    """            is MainServiceEvent.MeasureDelayCancelled -> {
+                //if (testRequests.completeCurrent(event.requestId)) resetTestStatus()
+            }""",
+    """            is MainServiceEvent.MeasureDelayCancelled -> {
+                if (event.requestId == currentPingRequestId) {
+                    currentPingTimeoutJob?.cancel()
+                    currentPingTimeoutJob = null
+                    currentPingRequestId = null
+                    resetTestStatus()
+                }
+            }""",
+    "handle ping cancellation event"
+)
+replace_once(
+    vm,
+    """    fun testCurrentServerRealPing() {
+        if (!uiState.value.isRunning) return
+        _uiState.update { it.copy(isTesting = true, status = MainStatus.Testing) }
+        dataSource.testCurrentServerRealPing("")
+    }""",
+    """    fun testCurrentServerRealPing() {
+        if (!uiState.value.isRunning) return
+        currentPingTimeoutJob?.cancel()
+        val requestId = UUID.randomUUID().toString()
+        currentPingRequestId = requestId
+        _uiState.update { it.copy(isTesting = true, status = MainStatus.Testing) }
+        currentPingTimeoutJob = viewModelScope.launch {
+            delay(15_000L)
+            if (currentPingRequestId == requestId && uiState.value.isRunning && uiState.value.isTesting) {
+                currentPingRequestId = null
+                currentPingTimeoutJob = null
+                resetTestStatus()
+            }
+        }
+        dataSource.testCurrentServerRealPing(requestId)
+    }""",
+    "add single-server ping timeout"
+)
+
+print("Moghimi Xray metering and real-ping timeout patches applied.")
+PY
 
 echo "Prepared branded Android source under $PROJECT"
