@@ -14,7 +14,9 @@ class MoghimiSyncWorker(
 ) : Worker(appContext, workerParams) {
     override fun doWork(): Result {
         return try {
-            MoghimiCloudSync.sync()
+            MoghimiCloudSync.sync(applicationContext)
+            Result.success()
+        } catch (_: MoghimiAccessDeniedException) {
             Result.success()
         } catch (error: IOException) {
             Result.retry()
