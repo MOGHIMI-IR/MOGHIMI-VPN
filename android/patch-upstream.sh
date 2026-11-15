@@ -897,10 +897,3 @@ PY
 python3 "$ROOT/android/patch-updater.py" "$PROJECT"
 
 echo "Prepared branded Android source under $PROJECT"
-
-
-PY
-
-python3 "$ROOT/android/patch-updater.py" "$PROJECT"
-
-echo "Prepared branded Android source under $PROJECT"
