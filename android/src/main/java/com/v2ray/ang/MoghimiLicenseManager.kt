@@ -366,8 +366,7 @@ object MoghimiLicenseManager {
 
                     val rxChunk = minOf(pendingRx, MAX_USAGE_REPORT_BYTES)
                     val txChunk = minOf(pendingTx, MAX_USAGE_REPORT_BYTES - rxChunk)
-                    meterSequence += 1L
-                    sequence = meterSequence
+                    sequence = meterSequence + 1L
                     reportRx = meterReportedRxTotal + rxChunk
                     reportTx = meterReportedTxTotal + txChunk
                     session = meterSessionId!!
@@ -399,6 +398,7 @@ object MoghimiLicenseManager {
                 )
 
                 synchronized(meterLock) {
+                    meterSequence = sequence
                     meterReportedRxTotal = reportRx
                     meterReportedTxTotal = reportTx
                     localRemainingBytes = minOf(localRemainingBytes, updated.totalRemainingBytes)
