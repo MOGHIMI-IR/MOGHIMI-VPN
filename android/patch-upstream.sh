@@ -49,7 +49,7 @@ source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
     ("versionCode = 755", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
-    ('versionName = "2.3.15"', 'versionName = "2.0.4"', "versionName"),
+    ('versionName = "2.3.15"', 'versionName = "2.0.5"', "versionName"),
 ]:
     if source.count(old) != 1:
         raise SystemExit(f"Expected one Gradle match for {label}")
@@ -1047,6 +1047,256 @@ replace_once(
 )
 
 print("Moghimi Xray metering and real-ping timeout patches applied.")
+PY
+
+
+# Protect Moghimi-owned cloud profiles from per-server and bulk export/share actions.
+python3 - "$PROJECT" <<'PY'
+from pathlib import Path
+import sys
+
+project = Path(sys.argv[1])
+java = project / "app/src/main/java/com/v2ray/ang"
+
+def replace_once(path: Path, old: str, new: str, label: str):
+    source = path.read_text(encoding="utf-8")
+    count = source.count(old)
+    if count != 1:
+        raise SystemExit(f"Expected one match for {label} in {path}; found {count}")
+    path.write_text(source.replace(old, new, 1), encoding="utf-8")
+
+# The group ID is the ownership boundary: personal/user-imported configs remain exportable.
+menu_file = java / "ui/main/MainImportMenu.kt"
+replace_once(
+    menu_file,
+    """internal fun serverMenuActions(
+    isComplexProfile: Boolean,
+    includeManagementActions: Boolean,
+): List<ServerMenuAction> = ServerMenuAction.entries.filter { action ->
+    (includeManagementActions || action.isShareAction) && (!isComplexProfile || action.supportsComplexProfiles)
+}""",
+    """internal fun serverMenuActions(
+    isComplexProfile: Boolean,
+    includeManagementActions: Boolean,
+    includeShareActions: Boolean = true,
+): List<ServerMenuAction> = ServerMenuAction.entries.filter { action ->
+    val allowedByActionType = if (action.isShareAction) includeShareActions else includeManagementActions
+    allowedByActionType && (!isComplexProfile || action.supportsComplexProfiles)
+}""",
+    "server menu share-action filtering"
+)
+replace_once(
+    menu_file,
+    """    more: Boolean,
+    onDismiss: () -> Unit,""",
+    """    more: Boolean,
+    allowShareActions: Boolean = true,
+    onDismiss: () -> Unit,""",
+    "ShareMethodDialog allowShareActions parameter"
+)
+replace_once(
+    menu_file,
+    """        includeManagementActions = more,
+    )""",
+    """        includeManagementActions = more,
+        includeShareActions = allowShareActions,
+    )""",
+    "filter share methods in dialog"
+)
+
+# Pass cloud ownership to each server row. In list mode hide the share shortcut;
+# in grid mode keep the More menu for edit/delete, but filter its share actions above.
+pager_file = java / "ui/main/MainServerPager.kt"
+replace_once(
+    pager_file,
+    """    val canReorder = groupId.isNotEmpty() && searchQuery.isEmpty()
+    val actions = remember(
+        onSelectServer,
+        onEditServer,
+        onShareServer,
+        onMoreServer,
+        onRemoveServer,
+    ) {
+        ServerRowActions(
+            select = onSelectServer,
+            edit = onEditServer,
+            share = onShareServer,
+            more = onMoreServer,
+            remove = onRemoveServer,
+        )
+    }""",
+    """    val canReorder = groupId.isNotEmpty() && searchQuery.isEmpty()
+    val allowShareActions = groupId != com.v2ray.ang.MoghimiCloudSync.CLOUD_GROUP_ID
+    val actions = remember(
+        onSelectServer,
+        onEditServer,
+        onShareServer,
+        onMoreServer,
+        onRemoveServer,
+        allowShareActions,
+    ) {
+        ServerRowActions(
+            select = onSelectServer,
+            edit = onEditServer,
+            share = onShareServer,
+            more = onMoreServer,
+            remove = onRemoveServer,
+            allowShareActions = allowShareActions,
+        )
+    }""",
+    "pass cloud ownership to server rows"
+)
+replace_once(
+    pager_file,
+    """    val more: (String, ProfileItem) -> Unit,
+    val remove: (String, String) -> Unit,
+)""",
+    """    val more: (String, ProfileItem) -> Unit,
+    val remove: (String, String) -> Unit,
+    val allowShareActions: Boolean,
+)""",
+    "store export permission in row actions"
+)
+replace_once(
+    pager_file,
+    """                } else {
+                    IconButton(onClick = { actions.share(row.guid, row.profile) }, Modifier.size(36.dp)) {
+                        Icon(
+                            painterResource(R.drawable.ic_share_24dp),
+                            stringResource(R.string.title_configuration_share),
+                            Modifier.size(24.dp)
+                        )
+                    }
+                    IconButton(onClick = { actions.edit(row.guid, row.profile) }, Modifier.size(36.dp)) {""",
+    """                } else {
+                    if (actions.allowShareActions) {
+                        IconButton(onClick = { actions.share(row.guid, row.profile) }, Modifier.size(36.dp)) {
+                            Icon(
+                                painterResource(R.drawable.ic_share_24dp),
+                                stringResource(R.string.title_configuration_share),
+                                Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    IconButton(onClick = { actions.edit(row.guid, row.profile) }, Modifier.size(36.dp)) {""",
+    "hide share shortcut for Moghimi server rows"
+)
+
+# Preserve the ownership bit while opening the server actions dialog.
+screen_file = java / "ui/main/MainScreen.kt"
+replace_once(
+    screen_file,
+    """@Composable
+fun MainScreen(""",
+    """private data class ServerActionTarget(
+    val guid: String,
+    val profile: ProfileItem,
+    val more: Boolean,
+    val allowShareActions: Boolean,
+)
+
+@Composable
+fun MainScreen(""",
+    "server action target model"
+)
+replace_once(
+    screen_file,
+    """    var shareTarget by remember { mutableStateOf<Triple<String, ProfileItem, Boolean>?>(null) }""",
+    """    var shareTarget by remember { mutableStateOf<ServerActionTarget?>(null) }""",
+    "server action state"
+)
+replace_once(
+    screen_file,
+    """    if (shareTarget != null) {
+        val (guid, profile, more) = shareTarget!!
+        ShareMethodDialog(
+            guid = guid,
+            profile = profile,
+            more = more,
+            onDismiss = { shareTarget = null },
+            onAction = onAction,
+            onRemove = removeServer,
+        )
+    }""",
+    """    if (shareTarget != null) {
+        val target = shareTarget!!
+        ShareMethodDialog(
+            guid = target.guid,
+            profile = target.profile,
+            more = target.more,
+            allowShareActions = target.allowShareActions,
+            onDismiss = { shareTarget = null },
+            onAction = onAction,
+            onRemove = removeServer,
+        )
+    }""",
+    "apply ownership filtering to share dialog"
+)
+replace_once(
+    screen_file,
+    """                            onShareServer = { guid, profile ->
+                                shareTarget = Triple(guid, profile, false)
+                            },
+                            onMoreServer = { guid, profile ->
+                                shareTarget = Triple(guid, profile, true)
+                            },""",
+    """                            onShareServer = { guid, profile ->
+                                shareTarget = ServerActionTarget(
+                                    guid, profile, false,
+                                    group.id != MoghimiCloudSync.CLOUD_GROUP_ID
+                                )
+                            },
+                            onMoreServer = { guid, profile ->
+                                shareTarget = ServerActionTarget(
+                                    guid, profile, true,
+                                    group.id != MoghimiCloudSync.CLOUD_GROUP_ID
+                                )
+                            },""",
+    "set sharing permission per group"
+)
+
+# Defence in depth: reject export events at the Activity layer as well as hiding UI.
+activity_file = java / "ui/main/MainActivity.kt"
+replace_once(
+    activity_file,
+    """                    is MainAction.ShareClipboard -> shareToClipboard(action.guid)
+                    is MainAction.ShareFullContent -> shareFullContentAsync(action.guid)""",
+    """                    is MainAction.ShareQRCode -> {
+                        if (!isMoghimiCloudProfile(action.guid)) mainViewModel.onAction(action)
+                    }
+                    is MainAction.ShareClipboard -> {
+                        if (!isMoghimiCloudProfile(action.guid)) shareToClipboard(action.guid)
+                    }
+                    is MainAction.ShareFullContent -> {
+                        if (!isMoghimiCloudProfile(action.guid)) shareFullContentAsync(action.guid)
+                    }""",
+    "block direct share events for Moghimi profiles"
+)
+replace_once(
+    activity_file,
+    """    private fun shareToClipboard(guid: String): Boolean =""",
+    """    private fun isMoghimiCloudProfile(guid: String): Boolean =
+        MmkvManager.decodeServerConfig(guid)?.subscriptionId == MoghimiCloudSync.CLOUD_GROUP_ID
+
+    private fun shareToClipboard(guid: String): Boolean =""",
+    "activity export guard helper"
+)
+
+# The global Export All action must skip provider-owned profiles but keep personal profiles.
+view_model_file = java / "ui/main/MainViewModel.kt"
+replace_once(
+    view_model_file,
+    """                    val ret = dataSource.shareNonCustomConfigsToClipboard(list)""",
+    """                    val personalServerList = list.filter { guid ->
+                        val profile = dataSource.decodeServerConfig(guid)
+                        profile != null &&
+                            profile.subscriptionId != com.v2ray.ang.MoghimiCloudSync.CLOUD_GROUP_ID
+                    }
+                    val ret = dataSource.shareNonCustomConfigsToClipboard(personalServerList)""",
+    "exclude Moghimi group from Export All"
+)
+
+print("Moghimi cloud server export/share restrictions applied.")
 PY
 
 echo "Prepared branded Android source under $PROJECT"
