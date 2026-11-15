@@ -88,6 +88,7 @@ fun MoghimiRootScreen(
     LaunchedEffect(Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
+            com.v2ray.ang.MoghimiLicenseManager.checkForUpdate(context)
         }
     }
     LaunchedEffect(license.isRegistered) {
@@ -155,6 +156,7 @@ fun MoghimiRootScreen(
             }
 
             MoghimiStartupSupportDialog()
+            MoghimiForcedUpdateDialog()
 
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
