@@ -70,6 +70,8 @@ object MoghimiLicenseManager {
     private var meterReportedRxTotal = 0L
     private var meterReportedTxTotal = 0L
     private var localRemainingBytes = Long.MAX_VALUE
+    private var lastMeterEntitlementCheckMs = 0L
+    private const val ENTITLEMENT_RECHECK_INTERVAL_MS = 60_000L
     private const val MAX_USAGE_REPORT_BYTES = 268435456L
 
     private fun prefs(context: Context) =
@@ -242,7 +244,7 @@ object MoghimiLicenseManager {
                 .putString(CACHE_STATUS, result.toString())
                 .apply()
             synchronized(meterLock) {
-                localRemainingBytes = updated.totalRemainingBytes
+                localRemainingBytes = minOf(localRemainingBytes, updated.totalRemainingBytes)
             }
             updated
         } catch (error: Exception) {
@@ -304,6 +306,7 @@ object MoghimiLicenseManager {
             } else {
                 0L
             }
+            lastMeterEntitlementCheckMs = android.os.SystemClock.elapsedRealtime()
         }
         if (!verified.isRegistered || !verified.accessAllowed || verified.totalRemainingBytes <= 0L) {
             stopTunnelForQuota(context)
@@ -320,7 +323,26 @@ object MoghimiLicenseManager {
      */
     fun recordTraffic(context: Context, rxDelta: Long, txDelta: Long): Boolean {
         if (rxDelta <= 0L && txDelta <= 0L) {
-            val allowed = mutableState.value.accessAllowed
+            val now = android.os.SystemClock.elapsedRealtime()
+            val shouldRecheck = synchronized(meterLock) {
+                if (now - lastMeterEntitlementCheckMs >= ENTITLEMENT_RECHECK_INTERVAL_MS) {
+                    lastMeterEntitlementCheckMs = now
+                    true
+                } else {
+                    false
+                }
+            }
+            if (shouldRecheck) {
+                // Check time expiry and administrative revocation even when the user
+                // leaves the tunnel idle and no byte counter increments.
+                val updated = refreshStatus(context.applicationContext)
+                synchronized(meterLock) {
+                    localRemainingBytes = minOf(localRemainingBytes, updated.totalRemainingBytes)
+                }
+            }
+            val allowed = synchronized(meterLock) {
+                localRemainingBytes > 0L && mutableState.value.accessAllowed
+            }
             if (!allowed) stopTunnelForQuota(context)
             return allowed
         }
