@@ -16,9 +16,36 @@ def replace_once(old: str, new: str, label: str) -> None:
         raise SystemExit(f"Expected one match for {label}; found {count}")
     source = source.replace(old, new, 1)
 
-# Do not ship a self-updater. REQUEST_INSTALL_PACKAGES is not appropriate for
-# a VPN client whose core purpose is not installing APK packages. Send users
-# to the official website; Android's normal browser/install flow handles updates.
+# Add only the platform APIs used by the entitlement gate.
+if "import android.widget.Toast\n" not in source:
+    replace_once(
+        "import android.os.Bundle\n",
+        "import android.os.Bundle\nimport android.widget.Toast\n",
+        "Toast import"
+    )
+if "import com.v2ray.ang.MoghimiLicenseManager\n" not in source:
+    replace_once(
+        "import com.v2ray.ang.AngApplication\n",
+        "import com.v2ray.ang.AngApplication\nimport com.v2ray.ang.MoghimiLicenseManager\n",
+        "subscription manager import"
+    )
+
+# Keep device entitlement checking in one place and prevent duplicate start taps.
+replace_once(
+    "class MainActivity : HelperBaseComponentActivity() {\n\n    private var moghimiSyncRunning = false\n",
+    "class MainActivity : HelperBaseComponentActivity() {\n\n    private var entitlementCheckInFlight = false\n    private var moghimiSyncRunning = false\n",
+    "entitlement gate state"
+)
+
+# Do not start the service from the VPN permission callback without checking the
+# device's current quota again.
+replace_once(
+    "if (it.resultCode == RESULT_OK) startV2Ray()",
+    "if (it.resultCode == RESULT_OK) requestServiceStart()",
+    "recheck quota after Android VPN consent"
+)
+
+# Route the upstream updater to the website; no APK-install permission is added.
 replace_once(
     "import com.v2ray.ang.ui.checkupdate.CheckUpdateActivity\n",
     "",
@@ -30,10 +57,10 @@ replace_once(
                 Utils.openUri(this, "https://moghimi-ir.github.io/MG_V2RAY/")
                 return
             }""",
-    "route update action to official download site"
+    "route update action to official website"
 )
 
-# Keep the Moghimi dashboard as the app's main screen.
+# Use the branded Compose dashboard as the main screen.
 replace_once(
     """        MainScreen(
             mainViewModel = mainViewModel,
@@ -46,100 +73,92 @@ replace_once(
     "Moghimi dashboard entry point"
 )
 
-
+# Settings and in-app restart actions must not bypass the subscription gate.
 replace_once(
-    """    private fun handleFabAction() {
-        if (mainViewModel.uiState.value.isRunning) {
-            LauncherManager.stopService(this)
-        } else {
-            requestServiceStart()
-        }
-    }""",
-    """    private fun handleFabAction() {
-        if (mainViewModel.uiState.value.isRunning) {
-            LauncherManager.stopService(this)
-            return
-        }
-        if (moghimiSyncRunning) {
-            Toast.makeText(this, "در حال دریافت کانفیگ‌های سایت هستیم؛ کمی صبر کن.", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (bestServerScanRunning) return
+    "if (restartService) LauncherManager.restartService(this)",
+    "if (restartService) restartServiceIfAllowed()",
+    "settings restart entitlement gate"
+)
+replace_once(
+    "MainAction.RestartService -> LauncherManager.restartServiceOrStart(this, ::requestServiceStart)",
+    "MainAction.RestartService -> restartServiceIfAllowed()",
+    "manual restart entitlement gate"
+)
 
-        bestServerScanRunning = true
-        Toast.makeText(this, "در حال انتخاب بهترین سرور...", Toast.LENGTH_SHORT).show()
-        mainViewModel.autoTestAllConfigsAndSelectBest { hasUsableConfig ->
-            bestServerScanRunning = false
-            if (hasUsableConfig) {
-                requestServiceStart()
-            } else {
+old_request = """    private fun requestServiceStart() {
+        if (!SettingsManager.isVpnMode()) {
+            startV2Ray()
+            return
+        }
+        val intent = VpnService.prepare(this)
+        if (intent == null) startV2Ray() else requestVpnPermission.launch(intent)
+    }"""
+new_request = """    private fun requestServiceStart() {
+        if (entitlementCheckInFlight) return
+        if (moghimiSyncRunning) {
+            Toast.makeText(this, "دریافت کانفیگ‌ها هنوز تمام نشده است.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        entitlementCheckInFlight = true
+        lifecycleScope.launch {
+            try {
+                val allowed = withContext(Dispatchers.IO) {
+                    MoghimiLicenseManager.canStartConnection(this@MainActivity)
+                }
+                if (!allowed) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "سهمیه رایگان تمام شده یا اشتراک فعال نیست. وضعیت پروفایل را بررسی کن.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@launch
+                }
+                if (!SettingsManager.isVpnMode()) {
+                    startV2Ray()
+                    return@launch
+                }
+                val intent = VpnService.prepare(this@MainActivity)
+                if (intent == null) startV2Ray() else requestVpnPermission.launch(intent)
+            } catch (error: Exception) {
                 Toast.makeText(
-                    this,
-                    "کانفیگ پاسخ‌گو پیدا نشد. اتصال برقرار نشد؛ کانفیگ‌ها را بررسی کن.",
+                    this@MainActivity,
+                    "بررسی اشتراک ناموفق بود: ${error.localizedMessage ?: "خطای نامشخص"}",
                     Toast.LENGTH_LONG
                 ).show()
+            } finally {
+                entitlementCheckInFlight = false
             }
         }
-    }""",
-    "connect flow"
-)
+    }
 
-dashboard_file = project / "app/src/main/java/com/v2ray/ang/ui/main/MoghimiDashboard.kt"
-dashboard_source = dashboard_file.read_text(encoding="utf-8")
-
-def replace_dashboard_once(old: str, new: str, label: str) -> None:
-    global dashboard_source
-    count = dashboard_source.count(old)
-    if count != 1:
-        raise SystemExit(f"Expected one dashboard match for {label}; found {count}")
-    dashboard_source = dashboard_source.replace(old, new, 1)
-
-replace_dashboard_once(
-    """    val pingStatusText = when {
-        !running || selectedServer == null -> "—"
-        uiState.isTesting -> "در حال سنجش"
-        measuredPingMillis == null -> "در انتظار"
-        measuredPingMillis >= 0L -> "$measuredPingMillis ms"
-        else -> "ناموفق"
-    }""",
-    """    val pingStatusText = when {
-        !running && uiState.isTesting -> "در حال انتخاب"
-        !running || selectedServer == null -> "—"
-        uiState.isTesting -> "در حال سنجش"
-        measuredPingMillis == null -> "در انتظار"
-        measuredPingMillis >= 0L -> "$measuredPingMillis ms"
-        else -> "ناموفق"
-    }""",
-    "disconnected scan ping label"
-)
-replace_dashboard_once(
-    """text = if (running) "ارتباط از طریق تونل امن برقرار است" else "برای شروع، دکمهٔ اتصال را بزن",""",
-    """text = when {
-                            running -> "ارتباط از طریق تونل امن برقرار است"
-                            uiState.isTesting -> "در حال انتخاب بهترین سرور..."
-                            else -> "برای شروع، دکمهٔ اتصال را بزن"
-                        },""",
-    "connection card scan status"
-)
-replace_dashboard_once(
-    """text = if (running) "اتصال شما فعال است" else "برای اتصال لمس کنید",""",
-    """text = when {
-                running -> "اتصال شما فعال است"
-                uiState.isTesting -> "در حال انتخاب بهترین سرور..."
-                else -> "برای اتصال لمس کنید"
-            },""",
-    "connect orb status line"
-)
-replace_dashboard_once(
-    """text = if (running) "برای پایان ارتباط، دکمهٔ مرکزی را لمس کنید" else "با انتخاب کانفیگ، اتصال خود را آغاز کن",""",
-    """text = when {
-                running -> "برای پایان ارتباط، دکمهٔ مرکزی را لمس کنید"
-                uiState.isTesting -> "بعد از انتخاب سرور، اتصال برقرار می‌شود"
-                else -> "با انتخاب کانفیگ، اتصال خود را آغاز کن"
-            },""",
-    "connect orb subtitle"
-)
-dashboard_file.write_text(dashboard_source, encoding="utf-8")
+    private fun restartServiceIfAllowed() {
+        if (!mainViewModel.uiState.value.isRunning) {
+            requestServiceStart()
+            return
+        }
+        if (entitlementCheckInFlight) return
+        entitlementCheckInFlight = true
+        lifecycleScope.launch {
+            try {
+                val allowed = withContext(Dispatchers.IO) {
+                    MoghimiLicenseManager.canStartConnection(this@MainActivity)
+                }
+                if (allowed) {
+                    LauncherManager.restartService(this@MainActivity)
+                } else {
+                    LauncherManager.stopService(this@MainActivity)
+                    Toast.makeText(
+                        this@MainActivity,
+                        "حجم یا اعتبار اشتراک پایان یافته است.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } finally {
+                entitlementCheckInFlight = false
+            }
+        }
+    }"""
+replace_once(old_request,new_request,"authoritative subscription check before starting/restarting VPN")
 
 activity_file.write_text(source, encoding="utf-8")
-print("Moghimi update action opens the official website; no in-app APK installer is added.")
+print("Moghimi update action opens the official website; VPN start and restart require a current entitlement.")
