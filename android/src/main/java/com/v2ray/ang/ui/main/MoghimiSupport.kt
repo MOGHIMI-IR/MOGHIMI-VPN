@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.v2ray.ang.MoghimiLicenseManager
 
 private const val MOGHIMI_SUPPORT_CARD = "6037998221406080"
 private const val MOGHIMI_APP_REPOSITORY = "https://github.com/MOGHIMI-IR/MOGHIMI-VPN"
@@ -181,4 +183,36 @@ fun MoghimiSupportSettingsSection() {
             }
         }
     }
+}
+
+
+@Composable
+fun MoghimiForcedUpdateDialog() {
+    val context = LocalContext.current
+    val license by MoghimiLicenseManager.state.collectAsStateWithLifecycle()
+    val downloadUrl = license.latestApkUrl
+    if (!license.updateAvailable || downloadUrl.isNullOrBlank()) return
+
+    AlertDialog(
+        onDismissRequest = { },
+        title = { Text("به‌روزرسانی اجباری", fontWeight = FontWeight.ExtraBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "نسخهٔ ${license.latestVersionName ?: "جدید"} منتشر شده است. برای ادامهٔ استفاده از VPN باید برنامه را به‌روزرسانی کنی."
+                )
+                Text("دانلود مستقیم از سرور Supabase:", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                Text(downloadUrl, color = MaterialTheme.colorScheme.primary, fontSize = 11.sp)
+                license.releaseNotes?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { openSupportLink(context, downloadUrl) }) {
+                Text("دانلود نسخهٔ جدید")
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surface
+    )
 }
