@@ -83,6 +83,25 @@ fun MoghimiRootScreen(
     onNavigate: (MainDestination) -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val license by com.v2ray.ang.MoghimiLicenseManager.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
+        }
+    }
+    LaunchedEffect(license.isRegistered) {
+        if (!license.isRegistered) selectedTab = 2
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(15_000L)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
+            }
+        }
+    }
 
     androidx.compose.runtime.CompositionLocalProvider(
         LocalLayoutDirection provides LayoutDirection.Rtl
@@ -103,17 +122,30 @@ fun MoghimiRootScreen(
                 when (page) {
                     0 -> MoghimiConnectionPage(
                         mainViewModel = mainViewModel,
-                        onConnectClick = { onAction(MainAction.ToggleService) },
+                        onConnectClick = {
+                            if (license.isRegistered && license.accessAllowed) {
+                                onAction(MainAction.ToggleService)
+                            } else {
+                                selectedTab = 2
+                            }
+                        },
                         onConfigsClick = { selectedTab = 1 },
                         onCloudSyncClick = onCloudSyncClick
                     )
-                    1 -> MainScreen(
-                        mainViewModel = mainViewModel,
-                        onCloudSyncClick = onCloudSyncClick,
-                        onAction = onAction,
-                        onNavigate = onNavigate,
-                        showConnectionBar = false
-                    )
+                    1 -> {
+                        if (license.isRegistered && license.accessAllowed) {
+                            MainScreen(
+                                mainViewModel = mainViewModel,
+                                onCloudSyncClick = onCloudSyncClick,
+                                onAction = onAction,
+                                onNavigate = onNavigate,
+                                showConnectionBar = false
+                            )
+                        } else {
+                            MoghimiLockedConfigsPage(onProfileClick = { selectedTab = 2 })
+                        }
+                    }
+                    2 -> MoghimiProfilePage()
                     else -> MoghimiSettingsPage(onNavigate = onNavigate)
                 }
             }
@@ -152,6 +184,19 @@ fun MoghimiRootScreen(
                 NavigationBarItem(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
+                    icon = {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_moghimi_tab_settings),
+                            contentDescription = null,
+                            modifier = Modifier.size(23.dp)
+                        )
+                    },
+                    label = { Text("پروفایل") },
+                    colors = moghimiNavigationColors()
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
                     icon = {
                         Icon(
                             painter = painterResource(R.drawable.ic_moghimi_tab_settings),
@@ -718,6 +763,44 @@ private fun MoghimiSettingsPage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 25.sp
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoghimiLockedConfigsPage(onProfileClick: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("سهمیه به پایان رسیده", color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "برای جلوگیری از مصرف خارج از سهمیه، فهرست سرورها تا ثبت اشتراک فعال بارگذاری نمی‌شود.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(18.dp))
+                Button(onClick = onProfileClick, modifier = Modifier.fillMaxWidth()) {
+                    Text("مشاهده مصرف و خرید اشتراک")
+                }
             }
         }
     }
