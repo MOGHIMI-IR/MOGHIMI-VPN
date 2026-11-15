@@ -25,7 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -38,6 +38,10 @@ private const val MOGHIMI_APP_REPOSITORY = "https://github.com/MOGHIMI-IR/MOGHIM
 private const val MOGHIMI_BOT_REPOSITORY = "https://github.com/MOGHIMI-IR/bot-telegram_moghimi"
 private const val GITHUB_STAR_GUIDE =
     "https://docs.github.com/en/get-started/exploring-projects-on-github/saving-repositories-with-stars"
+
+private object MoghimiSupportPromptSession {
+    @Volatile var dismissed: Boolean = false
+}
 
 private fun copySupportCard(context: Context) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -55,12 +59,15 @@ private fun openSupportLink(context: Context, url: String) {
 
 @Composable
 fun MoghimiStartupSupportDialog() {
-    var visible by rememberSaveable { mutableStateOf(true) }
+    var visible by remember { mutableStateOf(!MoghimiSupportPromptSession.dismissed) }
     if (!visible) return
     val context = LocalContext.current
 
     AlertDialog(
-        onDismissRequest = { visible = false },
+        onDismissRequest = {
+            MoghimiSupportPromptSession.dismissed = true
+            visible = false
+        },
         title = {
             Text("حمایت از ادامهٔ توسعه", fontWeight = FontWeight.ExtraBold)
         },
@@ -100,7 +107,10 @@ fun MoghimiStartupSupportDialog() {
             }
         },
         dismissButton = {
-            TextButton(onClick = { visible = false }) {
+            TextButton(onClick = {
+                MoghimiSupportPromptSession.dismissed = true
+                visible = false
+            }) {
                 Text("بستن")
             }
         },

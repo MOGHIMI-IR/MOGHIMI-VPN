@@ -255,6 +255,19 @@ private fun MoghimiConnectionPage(
         else -> "ناموفق"
     }
 
+    // One real ping after a connection/profile becomes active. This runs once per
+    // selected connection; no periodic probes are scheduled and the VPN data path
+    // itself is never blocked by this UI coroutine.
+    LaunchedEffect(running, uiState.selectedGuid, selectedServer?.guid) {
+        val targetGuid = selectedServer?.guid ?: return@LaunchedEffect
+        if (!running) return@LaunchedEffect
+        kotlinx.coroutines.delay(1_200L)
+        val current = mainViewModel.uiState.value
+        if (current.isRunning && current.selectedGuid == targetGuid && !current.isTesting) {
+            mainViewModel.testCurrentServerRealPing()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
