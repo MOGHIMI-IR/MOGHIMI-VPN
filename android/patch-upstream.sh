@@ -977,7 +977,7 @@ replace_once(
     "preserve Xray counters in generated profiles"
 )
 
-val vm = java / "ui/main/MainViewModel.kt"
+vm = java / "ui/main/MainViewModel.kt"
 replace_once(
     vm,
     "import java.util.concurrent.ConcurrentHashMap\n",
