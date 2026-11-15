@@ -1,6 +1,7 @@
 package com.v2ray.ang
 
 import android.net.Uri
+import android.content.Context
 import com.v2ray.ang.dto.entities.SubscriptionItem
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.handler.MmkvManager
@@ -20,6 +21,8 @@ import java.net.URL
  * VPN traffic itself is routed from Android's VpnService to the selected V2Ray endpoint.
  * It does not pass through Supabase.
  */
+class MoghimiAccessDeniedException(message: String) : IOException(message)
+
 object MoghimiCloudSync {
     const val CLOUD_GROUP_ID = "moghimi-cloud"
 
@@ -41,7 +44,13 @@ object MoghimiCloudSync {
      * fails, the previously working Moghimi group is left untouched.
      */
     @Synchronized
-    fun sync(): SyncResult {
+    fun sync(context: Context): SyncResult {
+        val entitlement = MoghimiLicenseManager.refreshStatus(context.applicationContext)
+        if (!entitlement.isRegistered || !entitlement.accessAllowed) {
+            // Keep old cloud nodes out of the picker after the allowance expires.
+            MmkvManager.removeSubscription(CLOUD_GROUP_ID)
+            throw MoghimiAccessDeniedException("سهمیه رایگان تمام شده است؛ برای دیدن سرورها اشتراک تهیه کن.")
+        }
         val entries = JSONArray(request(CONFIG_TABLE_URL, "GET"))
         if (entries.length() == 0) {
             throw IOException("در سایت هنوز کانفیگ فعالی منتشر نشده است.")
