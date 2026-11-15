@@ -727,6 +727,12 @@ methods = """    private fun scheduleMoghimiBackgroundSync() {
                     ).show()
                 }
             } catch (error: Exception) {
+                if (error is MoghimiAccessDeniedException) {
+                    // The sync service removed its local server group after an authoritative
+                    // denial. Refresh both the cached groups and selected tab immediately.
+                    mainViewModel.setupGroupTab(forceRefresh = true).join()
+                    mainViewModel.onAction(MainAction.SelectGroup(""))
+                }
                 if (!silent) {
                     Toast.makeText(
                         this@MainActivity,
