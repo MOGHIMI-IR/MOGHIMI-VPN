@@ -155,7 +155,7 @@ fun MoghimiRootScreen(
                 }
             }
 
-            MoghimiStartupSupportDialog()
+            if (!license.updateAvailable) MoghimiStartupSupportDialog()
             MoghimiForcedUpdateDialog()
 
             NavigationBar(
