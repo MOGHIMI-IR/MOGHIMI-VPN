@@ -37,7 +37,7 @@ private const val MOGHIMI_SUPPORT_CARD = "6037998221406080"
 private const val MOGHIMI_APP_REPOSITORY = "https://github.com/MOGHIMI-IR/MOGHIMI-VPN"
 private const val MOGHIMI_BOT_REPOSITORY = "https://github.com/MOGHIMI-IR/bot-telegram_moghimi"
 private const val GITHUB_STAR_GUIDE =
-    "https://docs.github.com/en/get-started/exploring-projects-on-github/saving-repositories-with-stars"
+    "https://github.com/MOGHIMI-IR/MOGHIMI-VPN/blob/main/docs/STAR_GUIDE_FA.md"
 
 private object MoghimiSupportPromptSession {
     @Volatile var dismissed: Boolean = false
@@ -94,11 +94,6 @@ fun MoghimiStartupSupportDialog() {
                         )
                     }
                 }
-                Text(
-                    "این پیام در هر بار بازکردن کامل برنامه نمایش داده می‌شود. از بخش تنظیمات هم همیشه در دسترس است.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp
-                )
             }
         },
         confirmButton = {
@@ -164,13 +159,13 @@ fun MoghimiSupportSettingsSection() {
                 onClick = { openSupportLink(context, MOGHIMI_APP_REPOSITORY) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("⭐ ستاره‌دادن به مخزن برنامه")
+                Text("⭐ رفتن به مخزن و ثبت ستاره")
             }
             OutlinedButton(
                 onClick = { openSupportLink(context, GITHUB_STAR_GUIDE) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("آموزش ستاره‌دادن در GitHub")
+                Text("آموزش فارسی ستاره‌دادن")
             }
             TextButton(
                 onClick = { openSupportLink(context, MOGHIMI_APP_REPOSITORY) },

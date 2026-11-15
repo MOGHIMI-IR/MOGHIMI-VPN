@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -36,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,10 +56,18 @@ fun MoghimiProfilePage() {
     var phone by rememberSaveable { mutableStateOf(MoghimiLicenseManager.phone(context)) }
     var activationCode by rememberSaveable { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var recoveryBusy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
+        if (!MoghimiLicenseManager.hasProfile(context)) {
+            try {
+                withContext(Dispatchers.IO) { MoghimiLicenseManager.recoverProfile(context) }
+            } catch (e: Exception) {
+                error = e.localizedMessage ?: "بازیابی خودکار حساب انجام نشد."
+            }
+        }
         while (true) {
             withContext(Dispatchers.IO) { MoghimiLicenseManager.refreshStatus(context) }
             kotlinx.coroutines.delay(15_000L)
@@ -114,6 +124,30 @@ fun MoghimiProfilePage() {
                         modifier = Modifier.fillMaxWidth(), enabled = !busy && username.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) { Text(if (busy) "در حال ثبت…" else "ثبت پروفایل و دریافت سهمیه", fontWeight = FontWeight.Bold) }
+                    OutlinedButton(
+                        onClick = {
+                            recoveryBusy = true
+                            error = null
+                            message = null
+                            scope.launch {
+                                try {
+                                    val recovered = withContext(Dispatchers.IO) {
+                                        MoghimiLicenseManager.recoverProfile(context)
+                                    }
+                                    message = if (recovered) "حساب قبلی این دستگاه بازیابی شد."
+                                        else "برای این دستگاه حساب قبلی پیدا نشد؛ در صورت اولین استفاده، پروفایل جدید بساز."
+                                } catch (e: Exception) {
+                                    error = e.localizedMessage ?: "بازیابی حساب انجام نشد."
+                                } finally {
+                                    recoveryBusy = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !busy && !recoveryBusy
+                    ) {
+                        Text(if (recoveryBusy) "در حال شناسایی دستگاه…" else "بازیابی خودکار حساب قبلی")
+                    }
                 }
             }
         } else {
@@ -199,8 +233,23 @@ fun MoghimiProfilePage() {
                     Text("کد یک‌بارمصرفی را که پس از تأیید رسید از بات گرفته‌ای وارد کن.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(
-                        value = activationCode, onValueChange = { activationCode = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(64) },
-                        modifier = Modifier.fillMaxWidth(), label = { Text("کد فعال‌سازی") }, singleLine = true
+                        value = activationCode,
+                        onValueChange = {
+                            activationCode = it.uppercase()
+                                .filter { c -> c in 'A'..'F' || c in '0'..'9' }
+                                .take(64)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(76.dp),
+                        label = { Text("کد فعال‌سازی") },
+                        placeholder = { Text("کد ۳۲ تا ۶۴ کاراکتری") },
+                        textStyle = MaterialTheme.typography.titleLarge.copy(letterSpacing = 2.sp),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Ascii,
+                            capitalization = KeyboardCapitalization.Characters,
+                            autoCorrect = false
+                        ),
+                        minLines = 2,
+                        singleLine = false
                     )
                     Button(
                         onClick = {
@@ -217,7 +266,7 @@ fun MoghimiProfilePage() {
                                 } finally { busy = false }
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(), enabled = !busy && activationCode.length >= 32
+                        modifier = Modifier.fillMaxWidth().height(54.dp), enabled = !busy && activationCode.length >= 32
                     ) { Text(if (busy) "در حال بررسی…" else "فعال‌سازی کد") }
                 }
             }

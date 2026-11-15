@@ -24,13 +24,15 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+private const val MOGHIMI_FREE_LIMIT_BYTES = 7L * 1024 * 1024 * 1024
+
 data class MoghimiLicenseUiState(
     val isRegistered: Boolean = false,
     val username: String = "",
     val phone: String = "",
     val freeUsedBytes: Long = 0,
-    val freeLimitBytes: Long = 5L * 1024 * 1024 * 1024,
-    val freeRemainingBytes: Long = 5L * 1024 * 1024 * 1024,
+    val freeLimitBytes: Long = MOGHIMI_FREE_LIMIT_BYTES,
+    val freeRemainingBytes: Long = MOGHIMI_FREE_LIMIT_BYTES,
     val paidRemainingBytes: Long = 0,
     val paidUsedBytes: Long = 0,
     val paidGrantedBytes: Long = 0,
@@ -147,6 +149,51 @@ object MoghimiLicenseManager {
 
     fun phone(context: Context): String = prefs(context).getString("phone", "").orEmpty()
 
+    /**
+     * Restore this device's single server profile. Android Keystore tokens are erased
+     * on uninstall, so a fresh token replaces the old token for this same Android ID.
+     * The username is returned by the server and does not need to be remembered.
+     */
+    fun recoverProfile(context: Context): Boolean {
+        mutableState.value = mutableState.value.copy(isLoading = true, error = null)
+        val token = generateToken()
+        return try {
+            val result = callApi(
+                JSONObject()
+                    .put("action", "recover")
+                    .put("device_hash", deviceHash(context))
+                    .put("device_token", token)
+            )
+            if (!result.optBoolean("ok")) {
+                throw IllegalStateException(errorMessage(result.optString("code"), 409))
+            }
+            val recoveredUsername = result.optString("username").trim()
+            require(recoveredUsername.isNotBlank()) { "اطلاعات حساب قبلی از سرور دریافت نشد." }
+            val recoveredPhone = if (result.isNull("phone")) "" else result.optString("phone")
+            saveToken(context, token)
+            prefs(context).edit()
+                .putString("username", recoveredUsername)
+                .putString("phone", recoveredPhone)
+                .apply()
+            mutableState.value = mutableState.value.copy(
+                isRegistered = true, username = recoveredUsername, phone = recoveredPhone, error = null
+            )
+            refreshStatus(context)
+            true
+        } catch (error: Exception) {
+            if (error.localizedMessage == errorMessage("device_not_registered", 404)) {
+                mutableState.value = MoghimiLicenseUiState()
+                false
+            } else {
+                mutableState.value = mutableState.value.copy(
+                    isLoading = false,
+                    error = error.localizedMessage ?: "بازیابی حساب دستگاه انجام نشد."
+                )
+                throw error
+            }
+        }
+    }
+
     private fun callApi(body: JSONObject): JSONObject {
         val connection = (URL(API_URL).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -158,7 +205,7 @@ object MoghimiLicenseManager {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             // Publishable key only; no service-role or database secret is shipped in the APK.
             setRequestProperty("apikey", API_KEY)
-            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.2")
+            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.3")
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -182,6 +229,7 @@ object MoghimiLicenseManager {
         "username_mismatch" -> "نام کاربری با حساب ثبت‌شده مطابقت ندارد."
         "phone_mismatch" -> "شماره موبایل با پروفایل ثبت‌شده مطابقت ندارد."
         "device_blocked" -> "دسترسی این دستگاه غیرفعال شده است."
+        "device_not_registered" -> "برای این دستگاه حساب قبلی ثبت نشده است."
         "invalid_or_expired_code" -> "کد فعال‌سازی نامعتبر یا منقضی شده است."
         "username_mismatch" -> "نام کاربری با سفارش تلگرام یکسان نیست."
         else -> "ارتباط با سرویس اشتراک برقرار نشد (کد $status)."
@@ -268,7 +316,7 @@ object MoghimiLicenseManager {
             username = result.optString("username", username(context)),
             phone = if (result.isNull("phone")) phone(context) else result.optString("phone"),
             freeUsedBytes = result.optLong("free_used_bytes"),
-            freeLimitBytes = result.optLong("free_limit_bytes", 5L * 1024 * 1024 * 1024),
+            freeLimitBytes = result.optLong("free_limit_bytes", MOGHIMI_FREE_LIMIT_BYTES),
             freeRemainingBytes = result.optLong("free_remaining_bytes"),
             paidRemainingBytes = result.optLong("paid_remaining_bytes"),
             paidUsedBytes = result.optLong("paid_used_bytes"),
@@ -415,7 +463,7 @@ object MoghimiLicenseManager {
                     username = username(context),
                     phone = phone(context),
                     freeUsedBytes = result.optLong("free_used_bytes"),
-                    freeLimitBytes = result.optLong("free_limit_bytes", 5L * 1024 * 1024 * 1024),
+                    freeLimitBytes = result.optLong("free_limit_bytes", MOGHIMI_FREE_LIMIT_BYTES),
                     freeRemainingBytes = result.optLong("free_remaining_bytes"),
                     paidRemainingBytes = result.optLong("paid_remaining_bytes"),
                     paidUsedBytes = result.optLong("paid_used_bytes"),
