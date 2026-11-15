@@ -94,7 +94,9 @@ fun MoghimiRootScreen(
         if (!license.isRegistered) selectedTab = 2
     }
     LaunchedEffect(license.isRegistered, license.accessAllowed) {
-        if (license.isRegistered && license.accessAllowed) onCloudSyncClick()
+        // Reconcile the local server group on both grant and revocation.
+        // A denied/expired status removes cached cloud nodes from the picker.
+        if (license.isRegistered) onCloudSyncClick()
     }
     LaunchedEffect(Unit) {
         while (true) {
