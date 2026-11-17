@@ -33,7 +33,7 @@ if "import com.v2ray.ang.MoghimiLicenseManager\n" not in source:
 # Keep device entitlement checking in one place and prevent duplicate start taps.
 replace_once(
     "class MainActivity : HelperBaseComponentActivity() {\n\n    private var moghimiSyncRunning = false\n",
-    "class MainActivity : HelperBaseComponentActivity() {\n\n    private var entitlementCheckInFlight = false\n    private var moghimiSyncRunning = false\n",
+    "class MainActivity : HelperBaseComponentActivity() {\n\n    private var entitlementCheckInFlight = false\n    private var smartConnectInFlight = false\n    private var moghimiSyncRunning = false\n",
     "entitlement gate state"
 )
 
@@ -69,6 +69,7 @@ replace_once(
     """        MoghimiRootScreen(
             mainViewModel = mainViewModel,
             onCloudSyncClick = { syncMoghimiConfigs(autoSelect = true, silent = false) },
+            onSmartConnectClick = { startSmartConnection() },
             onAction = { action ->""",
     "Moghimi dashboard entry point"
 )
@@ -93,7 +94,92 @@ old_request = """    private fun requestServiceStart() {
         val intent = VpnService.prepare(this)
         if (intent == null) startV2Ray() else requestVpnPermission.launch(intent)
     }"""
-new_request = """    private fun requestServiceStart() {
+new_request = """    private fun startSmartConnection() {
+        if (smartConnectInFlight || entitlementCheckInFlight) return
+        if (moghimiSyncRunning) {
+            Toast.makeText(this, "همگام‌سازی سرورها هنوز تمام نشده است.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        smartConnectInFlight = true
+        lifecycleScope.launch {
+            try {
+                val allowed = withContext(Dispatchers.IO) {
+                    MoghimiLicenseManager.canStartConnection(this@MainActivity)
+                }
+                if (!allowed) {
+                    val state = MoghimiLicenseManager.state.value
+                    val reason = state.error ?: when {
+                        !state.isRegistered -> "ابتدا پروفایل دستگاه را ثبت کنید."
+                        !state.accessAllowed -> "سهمیه تمام شده یا اشتراک فعالی ندارید."
+                        else -> "امکان بررسی اشتراک وجود ندارد؛ دوباره تلاش کنید."
+                    }
+                    toastError(reason)
+                    return@launch
+                }
+
+                val groupId = MoghimiCloudSync.CLOUD_GROUP_ID
+                mainViewModel.onAction(MainAction.SelectGroup(groupId))
+                var servers = withTimeoutOrNull(12_000L) {
+                    mainViewModel.serversForGroup(groupId).first { it.isNotEmpty() }
+                }.orEmpty()
+
+                if (servers.isEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        MoghimiCloudSync.sync(applicationContext)
+                    }
+                    mainViewModel.setupGroupTab(forceRefresh = true).join()
+                    mainViewModel.onAction(MainAction.SelectGroup(groupId))
+                    servers = withTimeoutOrNull(12_000L) {
+                        mainViewModel.serversForGroup(groupId).first { it.isNotEmpty() }
+                    }.orEmpty()
+                }
+
+                if (servers.isEmpty()) {
+                    toastError("هیچ کانفیگ فعالی برای آزمایش پیدا نشد.")
+                    return@launch
+                }
+
+                Toast.makeText(
+                    this@MainActivity,
+                    "در حال آزمایش ${servers.size} کانفیگ و انتخاب بهترین مسیر…",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+                mainViewModel.testAllRealPing()
+                val finished = withTimeoutOrNull(90_000L) {
+                    mainViewModel.uiState.first { !it.isTesting }
+                }
+                if (finished == null) {
+                    mainViewModel.cancelAllPing()
+                    toastError("آزمایش سرورها بیش از حد طول کشید؛ دوباره تلاش کنید.")
+                    return@launch
+                }
+
+                val testedServers = mainViewModel.serversForGroup(groupId).value
+                val best = testedServers
+                    .filter { it.testDelayMillis > 0L }
+                    .minByOrNull { it.testDelayMillis }
+                if (best == null) {
+                    toastError("هیچ‌کدام از کانفیگ‌ها پاسخ معتبر ندادند. اینترنت یا سرورها را بررسی کنید.")
+                    return@launch
+                }
+
+                mainViewModel.updateSelectedGuid(best.guid)
+                Toast.makeText(
+                    this@MainActivity,
+                    "بهترین کانفیگ انتخاب شد · ${best.testDelayMillis} ms",
+                    Toast.LENGTH_SHORT
+                ).show()
+                requestServiceStart()
+            } catch (error: Exception) {
+                toastError(error.localizedMessage ?: "اتصال هوشمند انجام نشد.")
+            } finally {
+                smartConnectInFlight = false
+            }
+        }
+    }
+
+    private fun requestServiceStart() {
         if (entitlementCheckInFlight) return
         if (moghimiSyncRunning) {
             Toast.makeText(this, "دریافت کانفیگ‌ها هنوز تمام نشده است.", Toast.LENGTH_SHORT).show()
@@ -106,11 +192,13 @@ new_request = """    private fun requestServiceStart() {
                     MoghimiLicenseManager.canStartConnection(this@MainActivity)
                 }
                 if (!allowed) {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "سهمیه رایگان تمام شده یا اشتراک فعال نیست. وضعیت پروفایل را بررسی کن.",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val state = MoghimiLicenseManager.state.value
+                    val reason = state.error ?: when {
+                        !state.isRegistered -> "ابتدا پروفایل دستگاه را ثبت کنید."
+                        !state.accessAllowed -> "سهمیه تمام شده یا اشتراک فعالی ندارید."
+                        else -> "امکان بررسی اشتراک وجود ندارد؛ دوباره تلاش کنید."
+                    }
+                    Toast.makeText(this@MainActivity, reason, Toast.LENGTH_LONG).show()
                     return@launch
                 }
                 if (!SettingsManager.isVpnMode()) {

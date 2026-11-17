@@ -46,11 +46,23 @@ object MoghimiCloudSync {
     @Synchronized
     fun sync(context: Context): SyncResult {
         val entitlement = MoghimiLicenseManager.refreshStatus(context.applicationContext)
+        if (!entitlement.networkAvailable) {
+            throw IOException(
+                entitlement.error ?: "اینترنت در دسترس نیست؛ اتصال را بررسی کنید."
+            )
+        }
+        if (entitlement.error != null && entitlement.accessAllowed) {
+            // The account was previously valid; a temporary API failure is not a denial.
+            throw IOException(entitlement.error)
+        }
         if (!entitlement.isRegistered || !entitlement.accessAllowed) {
-            // Keep old cloud nodes out of the picker after the allowance expires.
+            if (!entitlement.isServerVerified) {
+                throw IOException("وضعیت اشتراک هنوز از سرور تأیید نشده است.")
+            }
             MmkvManager.removeSubscription(CLOUD_GROUP_ID)
             throw MoghimiAccessDeniedException("سهمیه رایگان تمام شده است؛ برای دیدن سرورها اشتراک تهیه کن.")
         }
+        if (entitlement.error != null) throw IOException(entitlement.error)
         val entries = JSONArray(request(CONFIG_TABLE_URL, "GET"))
         if (entries.length() == 0) {
             throw IOException("در سایت هنوز کانفیگ فعالی منتشر نشده است.")

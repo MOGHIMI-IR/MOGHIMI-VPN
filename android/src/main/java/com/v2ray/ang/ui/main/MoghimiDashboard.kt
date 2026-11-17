@@ -35,6 +35,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -72,39 +73,50 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import com.v2ray.ang.R
 
 @Composable
 fun MoghimiRootScreen(
     mainViewModel: MainViewModel,
     onCloudSyncClick: () -> Unit,
+    onSmartConnectClick: () -> Unit,
     onAction: (MainAction) -> Unit,
     onNavigate: (MainDestination) -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var smartConnectEnabled by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val license by com.v2ray.ang.MoghimiLicenseManager.state.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            // Fetch the active release before profile/status calls. Older clients
-            // may receive HTTP 426 from status/register; that must not suppress
-            // the mandatory update dialog and the direct download notification.
-            runCatching {
-                com.v2ray.ang.MoghimiLicenseManager.checkForUpdate(context)
+        coroutineScope {
+            val releaseCheck = async(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { com.v2ray.ang.MoghimiLicenseManager.checkForUpdate(context) }
             }
-            runCatching {
-                com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context)
+            val statusCheck = async(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context) }
             }
+            releaseCheck.await()
+            statusCheck.await()
         }
     }
     LaunchedEffect(license.isRegistered) {
         if (!license.isRegistered) selectedTab = 2
     }
-    LaunchedEffect(license.isRegistered, license.accessAllowed) {
-        // Reconcile the local server group on both grant and revocation.
-        // A denied/expired status removes cached cloud nodes from the picker.
-        if (license.isRegistered) onCloudSyncClick()
+    LaunchedEffect(
+        license.isRegistered,
+        license.accessAllowed,
+        license.networkAvailable,
+        license.error
+    ) {
+        // Sync again after connectivity returns. Never erase a cached server list
+        // while the status endpoint is unreachable.
+        if (license.isRegistered && license.networkAvailable &&
+            (license.error == null || (!license.accessAllowed && license.isServerVerified))) {
+            onCloudSyncClick()
+        }
     }
     LaunchedEffect(Unit) {
         while (true) {
@@ -125,6 +137,13 @@ fun MoghimiRootScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            if (license.isLoading) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Color(0xFFA98BFF),
+                    trackColor = Color(0xFF24213D)
+                )
+            }
             Crossfade(
                 targetState = selectedTab,
                 animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
@@ -136,8 +155,14 @@ fun MoghimiRootScreen(
                 when (page) {
                     0 -> MoghimiConnectionPage(
                         mainViewModel = mainViewModel,
+                        smartConnectEnabled = smartConnectEnabled,
+                        onSmartConnectChange = { smartConnectEnabled = it },
                         onConnectClick = {
-                            if (license.isRegistered && license.accessAllowed) {
+                            if (mainViewModel.uiState.value.isRunning) {
+                                onAction(MainAction.ToggleService)
+                            } else if (smartConnectEnabled) {
+                                onSmartConnectClick()
+                            } else if (license.isRegistered && license.accessAllowed) {
                                 onAction(MainAction.ToggleService)
                             } else {
                                 selectedTab = 2
@@ -241,6 +266,8 @@ private fun moghimiNavigationColors() = NavigationBarItemDefaults.colors(
 @Composable
 private fun MoghimiConnectionPage(
     mainViewModel: MainViewModel,
+    smartConnectEnabled: Boolean,
+    onSmartConnectChange: (Boolean) -> Unit,
     onConnectClick: () -> Unit,
     onConfigsClick: () -> Unit,
     onCloudSyncClick: () -> Unit
@@ -379,6 +406,40 @@ private fun MoghimiConnectionPage(
 
         Spacer(Modifier.height(8.dp))
 
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            color = Color(0xFF171C36),
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp, Color(0xFF9B7CFF).copy(alpha = 0.48f)
+            )
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 15.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "اتصال هوشمند",
+                        color = Color(0xFFE8DEFF),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        "آزمون کانفیگ‌های مقیمی و انتخاب کم‌تأخیرترین",
+                        color = Color(0xFFB9AEDF),
+                        fontSize = 10.sp
+                    )
+                }
+                Switch(
+                    checked = smartConnectEnabled,
+                    onCheckedChange = onSmartConnectChange
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
         MoghimiConnectionOrb(
             connected = running,
             onClick = onConnectClick
@@ -501,8 +562,8 @@ private fun MoghimiConnectionOrb(
         ),
         label = "orb-rotation"
     )
-    val accent = if (connected) Color(0xFF50E0B5) else Color(0xFFFFD34D)
-    val secondary = Color(0xFF9B83FF)
+    val accent = if (connected) Color(0xFF55E5BC) else Color(0xFFB18CFF)
+    val secondary = Color(0xFF7C5CFF)
 
     Box(
         modifier = Modifier.size(264.dp),
@@ -527,8 +588,14 @@ private fun MoghimiConnectionOrb(
                 style = Stroke(width = 2.dp.toPx())
             )
             drawCircle(
-                color = secondary.copy(alpha = 0.16f),
+                color = secondary.copy(alpha = 0.24f),
                 radius = radius * 0.82f,
+                center = c,
+                style = Stroke(width = 1.4.dp.toPx())
+            )
+            drawCircle(
+                color = secondary.copy(alpha = 0.10f),
+                radius = radius * 1.12f * pulse,
                 center = c,
                 style = Stroke(width = 1.dp.toPx())
             )
@@ -569,9 +636,9 @@ private fun MoghimiConnectionOrb(
                 .background(
                     Brush.linearGradient(
                         if (connected) {
-                            listOf(Color(0xFF174C47), Color(0xFF102A42), Color(0xFF16243B))
+                            listOf(Color(0xFF164B4B), Color(0xFF182B48), Color(0xFF211B48))
                         } else {
-                            listOf(Color(0xFF5B4B1C), Color(0xFF263050), Color(0xFF18243E))
+                            listOf(Color(0xFF39245F), Color(0xFF20264F), Color(0xFF111B36))
                         }
                     )
                 )

@@ -7,6 +7,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.pm.PackageManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -46,6 +48,9 @@ data class MoghimiLicenseUiState(
     val accessAllowed: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val networkAvailable: Boolean = true,
+    val isServerVerified: Boolean = false,
+    val lastVerifiedAtMs: Long = 0L,
     val updateAvailable: Boolean = false,
     val latestVersionName: String? = null,
     val latestVersionCode: Long = 0,
@@ -68,6 +73,9 @@ object MoghimiLicenseManager {
     private const val CACHE_STATUS = "cache_status"
     private const val CACHE_RELEASE = "cache_release"
     private const val OFFLINE_GRACE_MS = 60_000L
+    private const val STATUS_CACHE_TTL_MS = 20_000L
+    private const val RELEASE_CACHE_TTL_MS = 60_000L
+    private const val RELEASE_VERIFIED_AT = "release_verified_at"
     private const val UPDATE_CHANNEL_ID = "moghimi_app_updates"
     private const val UPDATE_NOTIFICATION_ID = 58024
     private const val SUPABASE_APK_PREFIX = "https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/"
@@ -241,23 +249,47 @@ object MoghimiLicenseManager {
     }
 
     fun checkForUpdate(context: Context): MoghimiLicenseUiState {
+        val appContext = context.applicationContext
+        val p = prefs(appContext)
+        val now = System.currentTimeMillis()
+        val lastChecked = p.getLong(RELEASE_VERIFIED_AT, 0L)
+        val cached = p.getString(CACHE_RELEASE, null)
+        if (lastChecked > 0L && now >= lastChecked && now - lastChecked < RELEASE_CACHE_TTL_MS) {
+            if (!cached.isNullOrBlank()) {
+                return runCatching {
+                    applyReleaseInfo(appContext, JSONObject(cached))
+                }.getOrElse { mutableState.value }
+            }
+            val unchanged = mutableState.value.copy(
+                updateAvailable = false,
+                latestVersionName = null,
+                latestVersionCode = 0,
+                latestApkUrl = null,
+                latestSha256 = null,
+                releaseNotes = null
+            )
+            mutableState.value = unchanged
+            return unchanged
+        }
         return try {
             val response = callApi(JSONObject().put("action", "release"))
             if (!response.optBoolean("ok")) throw IllegalStateException("دریافت نسخهٔ جدید ناموفق بود.")
             val release = response.optJSONObject("release")
+            p.edit().putLong(RELEASE_VERIFIED_AT, now).apply()
             if (release == null) {
-                mutableState.value = mutableState.value.copy(
+                p.edit().remove(CACHE_RELEASE).apply()
+                val unchanged = mutableState.value.copy(
                     updateAvailable = false, latestVersionName = null, latestVersionCode = 0,
                     latestApkUrl = null, latestSha256 = null, releaseNotes = null
                 )
-                mutableState.value
+                mutableState.value = unchanged
+                unchanged
             } else {
-                applyReleaseInfo(context, release)
+                applyReleaseInfo(appContext, release)
             }
         } catch (_: Exception) {
-            val cached = prefs(context).getString(CACHE_RELEASE, null)
             if (cached.isNullOrBlank()) mutableState.value
-            else runCatching { applyReleaseInfo(context, JSONObject(cached)) }.getOrElse { mutableState.value }
+            else runCatching { applyReleaseInfo(appContext, JSONObject(cached)) }.getOrElse { mutableState.value }
         }
     }
 
@@ -388,22 +420,99 @@ object MoghimiLicenseManager {
         return refreshStatus(context)
     }
 
-    fun refreshStatus(context: Context): MoghimiLicenseUiState {
-        if (!hasProfile(context)) {
-            val empty = MoghimiLicenseUiState()
+    private fun hasInternetConnection(context: Context): Boolean {
+        return runCatching {
+            val manager = context.applicationContext
+                .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = manager.activeNetwork ?: return@runCatching false
+            val capabilities = manager.getNetworkCapabilities(network) ?: return@runCatching false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }.getOrDefault(false)
+    }
+
+    private fun noInternetState(context: Context): MoghimiLicenseUiState {
+        val cached = loadCachedStatus(context)
+        val previous = cached ?: mutableState.value
+        return previous.copy(
+            isRegistered = hasProfile(context),
+            username = username(context).ifBlank { previous.username },
+            phone = phone(context).ifBlank { previous.phone },
+            isLoading = false,
+            networkAvailable = false,
+            error = "اینترنت قطع است؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید."
+        )
+    }
+
+    @Synchronized
+    fun refreshStatus(context: Context, force: Boolean = false): MoghimiLicenseUiState {
+        val appContext = context.applicationContext
+        if (!hasProfile(appContext)) {
+            val empty = MoghimiLicenseUiState(
+                networkAvailable = hasInternetConnection(appContext)
+            )
             mutableState.value = empty
             return empty
         }
-        mutableState.value = mutableState.value.copy(isLoading = true, error = null)
-        return try {
-            val result = callApi(baseRequest(context, "status"))
-            if (!result.optBoolean("ok")) {
-                throw IllegalStateException(errorMessage(result.optString("code"), 403))
+
+        if (!hasInternetConnection(appContext)) {
+            val offline = noInternetState(appContext)
+            mutableState.value = offline
+            return offline
+        }
+
+        val now = System.currentTimeMillis()
+        val verifiedAt = prefs(appContext).getLong(VERIFIED_AT, 0L)
+        if (!force && verifiedAt > 0L && now >= verifiedAt && now - verifiedAt < STATUS_CACHE_TTL_MS) {
+            val cached = loadCachedStatus(appContext)
+            if (cached != null) {
+                val recent = cached.copy(
+                    isLoading = false,
+                    networkAvailable = true,
+                    isServerVerified = true,
+                    lastVerifiedAtMs = verifiedAt,
+                    error = null
+                )
+                mutableState.value = recent
+                return recent
             }
-            val updated = parseStatus(context, result)
+        }
+
+        mutableState.value = mutableState.value.copy(
+            isRegistered = true,
+            isLoading = true,
+            networkAvailable = true,
+            error = null
+        )
+        return try {
+            val result = callApi(baseRequest(appContext, "status"))
+            if (!result.optBoolean("ok")) {
+                val code = result.optString("code")
+                if (code == "device_blocked" || code == "device_not_found") {
+                    val denied = mutableState.value.copy(
+                        isRegistered = true,
+                        accessAllowed = false,
+                        isLoading = false,
+                        networkAvailable = true,
+                        isServerVerified = true,
+                        lastVerifiedAtMs = System.currentTimeMillis(),
+                        error = errorMessage(code, 403)
+                    )
+                    mutableState.value = denied
+                    return denied
+                }
+                throw IllegalStateException(errorMessage(code, 403))
+            }
+            val verifiedAtNow = System.currentTimeMillis()
+            val updated = parseStatus(appContext, result).copy(
+                networkAvailable = true,
+                isServerVerified = true,
+                lastVerifiedAtMs = verifiedAtNow,
+                error = null
+            )
             mutableState.value = updated
-            prefs(context).edit()
-                .putLong(VERIFIED_AT, System.currentTimeMillis())
+            prefs(appContext).edit()
+                .putLong(VERIFIED_AT, verifiedAtNow)
                 .putString(CACHE_STATUS, result.toString())
                 .apply()
             synchronized(meterLock) {
@@ -411,14 +520,33 @@ object MoghimiLicenseManager {
             }
             updated
         } catch (error: Exception) {
-            val cached = loadCachedStatus(context)
-            val age = System.currentTimeMillis() - prefs(context).getLong(VERIFIED_AT, 0L)
-            val usableCache = cached != null && age in 0..OFFLINE_GRACE_MS && cached.accessAllowed
+            val message = error.localizedMessage ?: "ارتباط با سرور بررسی اشتراک برقرار نشد."
+            val isAuthoritativeDenial = message == errorMessage("device_blocked", 401) ||
+                message == errorMessage("device_not_registered", 401) ||
+                message == errorMessage("device_not_found", 403)
+            if (isAuthoritativeDenial) {
+                val denied = mutableState.value.copy(
+                    isRegistered = true,
+                    accessAllowed = false,
+                    isLoading = false,
+                    networkAvailable = true,
+                    isServerVerified = true,
+                    lastVerifiedAtMs = System.currentTimeMillis(),
+                    error = message
+                )
+                mutableState.value = denied
+                return denied
+            }
+            val cached = loadCachedStatus(appContext)
             val fallback = (cached ?: mutableState.value).copy(
+                isRegistered = true,
+                username = username(appContext),
+                phone = phone(appContext),
                 isLoading = false,
-                error = error.localizedMessage ?: "دریافت وضعیت اشتراک انجام نشد."
+                networkAvailable = true,
+                error = "سرور بررسی اشتراک فعلاً پاسخ نمی‌دهد؛ اتصال را دوباره بررسی کنید."
             )
-            mutableState.value = if (!usableCache) fallback.copy(accessAllowed = false) else fallback
+            mutableState.value = fallback
             mutableState.value
         }
     }
@@ -436,6 +564,9 @@ object MoghimiLicenseManager {
             paidGrantedBytes = result.optLong("paid_granted_bytes"),
             paidExpiresAt = result.optString("paid_expires_at").takeIf { it.isNotBlank() && it != "null" },
             accessAllowed = result.optBoolean("access_allowed"),
+            networkAvailable = true,
+            isServerVerified = true,
+            lastVerifiedAtMs = prefs(context).getLong(VERIFIED_AT, 0L),
             updateAvailable = mutableState.value.updateAvailable,
             latestVersionName = mutableState.value.latestVersionName,
             latestVersionCode = mutableState.value.latestVersionCode,
@@ -634,10 +765,21 @@ object MoghimiLicenseManager {
     }
 
     fun canStartConnection(context: Context): Boolean {
-        val release = checkForUpdate(context)
+        val appContext = context.applicationContext
+        if (!hasInternetConnection(appContext)) {
+            mutableState.value = noInternetState(appContext)
+            return false
+        }
+        if (!hasProfile(appContext)) return false
+        val release = checkForUpdate(appContext)
         if (release.updateAvailable) return false
-        if (!hasProfile(context)) return false
-        val updated = refreshStatus(context)
+        val updated = refreshStatus(appContext)
+        if (!updated.networkAvailable) return false
+        if (updated.error != null) {
+            val verifiedAt = prefs(appContext).getLong(VERIFIED_AT, 0L)
+            val age = System.currentTimeMillis() - verifiedAt
+            return updated.accessAllowed && age in 0..OFFLINE_GRACE_MS
+        }
         return !updated.updateAvailable && updated.accessAllowed && updated.totalRemainingBytes > 0
     }
 

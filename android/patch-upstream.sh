@@ -651,7 +651,6 @@ replace_once(
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}""",
     """        mainViewModel.onAction(MainAction.Initialize)
         scheduleMoghimiBackgroundSync()
-        syncMoghimiConfigs(autoSelect = true, silent = true)
 
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}""",
     "startup cloud sync"

@@ -70,10 +70,6 @@ fun MoghimiProfilePage() {
                 error = e.localizedMessage ?: "بازیابی خودکار حساب انجام نشد."
             }
         }
-        while (true) {
-            withContext(Dispatchers.IO) { MoghimiLicenseManager.refreshStatus(context) }
-            kotlinx.coroutines.delay(15_000L)
-        }
     }
 
     Column(
@@ -167,10 +163,22 @@ fun MoghimiProfilePage() {
                             Text(if (license.phone.isBlank()) "شماره‌ای ثبت نشده" else license.phone,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                         }
+                        val statusLabel = when {
+                            !license.networkAvailable -> "بدون اینترنت"
+                            license.error != null -> "وضعیت نامشخص"
+                            license.isLoading && !license.isServerVerified -> "در حال بررسی"
+                            license.accessAllowed -> "فعال"
+                            else -> "نیازمند اشتراک"
+                        }
+                        val statusColor = when {
+                            !license.networkAvailable || license.error != null -> Color(0xFFFFC66D)
+                            license.accessAllowed -> Color(0xFF69E2BB)
+                            else -> MaterialTheme.colorScheme.error
+                        }
                         Surface(shape = RoundedCornerShape(12.dp),
-                            color = if (license.accessAllowed) Color(0xFF143D36) else Color(0xFF47321D)) {
-                            Text(if (license.accessAllowed) "فعال" else "نیازمند اشتراک",
-                                color = if (license.accessAllowed) Color(0xFF69E2BB) else Color(0xFFFFD47A),
+                            color = statusColor.copy(alpha = 0.14f)) {
+                            Text(statusLabel,
+                                color = statusColor,
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                 fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
@@ -211,8 +219,14 @@ fun MoghimiProfilePage() {
                         Text("اعتبار تا: " + it.replace("T", " ").take(16),
                             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
                     }
-                    if (!license.accessAllowed) {
-                        Text("سهمیه قابل‌استفاده تمام شده است. فهرست سرورها تا فعال‌شدن اشتراک نمایش داده نمی‌شود.",
+                    if (!license.networkAvailable || license.error != null) {
+                        Text(
+                            license.error ?: "ارتباط با سرور اشتراک برقرار نیست؛ دوباره تلاش کنید.",
+                            color = Color(0xFFFFC66D),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else if (!license.accessAllowed) {
+                        Text("سهمیه قابل‌استفاده تمام شده است. برای ادامه اشتراک تهیه کنید.",
                             color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                     Button(
