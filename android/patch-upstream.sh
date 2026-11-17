@@ -1300,12 +1300,14 @@ print("Moghimi cloud server export/share restrictions applied.")
 # Improve upstream-network handover recovery.
 core_manager_file = java / "core/CoreServiceManager.kt"
 core_manager = core_manager_file.read_text(encoding="utf-8")
-replace_once(
-    core_manager_file,
-    "onHandover = { reloadCore() },",
-    "onHandover = { reloadCoreWithRetry() },",
-    "retry core reload after network handover"
-)
+old_handover = "onHandover = { reloadCore() },"
+new_handover = "onHandover = { reloadCoreWithRetry() },"
+if old_handover in core_manager:
+    if core_manager.count(old_handover) != 1:
+        raise SystemExit("Expected exactly one network handover callback")
+    core_manager = core_manager.replace(old_handover, new_handover, 1)
+elif new_handover not in core_manager:
+    raise SystemExit("Could not locate network handover callback")
 handover_retry = """    private fun reloadCoreWithRetry() {
         for (attempt in 0 until 3) {
             if (reloadCore()) return
@@ -1327,11 +1329,11 @@ handover_retry = """    private fun reloadCoreWithRetry() {
 
 """
 marker = "    private fun reloadCore(): Boolean {"
-if core_manager.count("private fun reloadCoreWithRetry()") == 0:
+if "private fun reloadCoreWithRetry()" not in core_manager:
     if core_manager.count(marker) != 1:
         raise SystemExit("Could not locate CoreServiceManager reloadCore insertion point")
     core_manager = core_manager.replace(marker, handover_retry + marker, 1)
-    core_manager_file.write_text(core_manager, encoding="utf-8")
+core_manager_file.write_text(core_manager, encoding="utf-8")
 
 
 PY
