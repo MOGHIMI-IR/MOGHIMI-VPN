@@ -10,6 +10,10 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 /**
  * Downloads only active public entries from the Moghimi V2Ray Supabase project.
@@ -51,10 +55,9 @@ object MoghimiCloudSync {
                 entitlement.error ?: "اینترنت در دسترس نیست؛ اتصال را بررسی کنید."
             )
         }
-        if (entitlement.error != null && entitlement.accessAllowed) {
-            // The account was previously valid; a temporary API failure is not a denial.
-            throw IOException(entitlement.error)
-        }
+        // Any transport/API error is not an authoritative expiry decision.
+        // Preserve the cached cloud group until a successful online status response.
+        if (entitlement.error != null) throw IOException(entitlement.error)
         if (!entitlement.isRegistered || !entitlement.accessAllowed) {
             if (!entitlement.isServerVerified) {
                 throw IOException("وضعیت اشتراک هنوز از سرور تأیید نشده است.")
@@ -62,33 +65,53 @@ object MoghimiCloudSync {
             MmkvManager.removeSubscription(CLOUD_GROUP_ID)
             throw MoghimiAccessDeniedException("سهمیه رایگان تمام شده است؛ برای دیدن سرورها اشتراک تهیه کن.")
         }
-        if (entitlement.error != null) throw IOException(entitlement.error)
         val entries = JSONArray(request(CONFIG_TABLE_URL, "GET"))
         if (entries.length() == 0) {
             throw IOException("در سایت هنوز کانفیگ فعالی منتشر نشده است.")
         }
 
-        val payloads = ArrayList<String>(entries.length())
-        for (index in 0 until entries.length()) {
-            val entry = entries.optJSONObject(index) ?: continue
-            val type = entry.optString("entry_type")
-
-            val payload = when (type) {
-                "text" -> entry.optString("config_text")
-                "file" -> {
-                    val path = entry.optString("file_path")
-                    if (path.isBlank()) {
-                        throw IOException("مسیر یکی از فایل‌های کانفیگ خالی است.")
-                    }
-                    downloadPrivateFile(path)
-                }
-                else -> ""
-            }
-
-            if (payload.isNotBlank()) {
-                payloads += payload.trim()
-            }
+        val payloadByIndex = arrayOfNulls<String>(entries.length())
+        val fileTasks = ArrayList<Pair<Int, Future<String>>>()
+        val fileEntries = (0 until entries.length()).mapNotNull { index ->
+            val entry = entries.optJSONObject(index) ?: return@mapNotNull null
+            if (entry.optString("entry_type") == "file") index to entry else null
         }
+        val downloadPool = if (fileEntries.isNotEmpty()) {
+            Executors.newFixedThreadPool(minOf(4, fileEntries.size))
+        } else null
+        try {
+            for (index in 0 until entries.length()) {
+                val entry = entries.optJSONObject(index) ?: continue
+                when (entry.optString("entry_type")) {
+                    "text" -> payloadByIndex[index] = entry.optString("config_text").trim()
+                    "file" -> {
+                        val path = entry.optString("file_path")
+                        if (path.isBlank()) {
+                            throw IOException("مسیر یکی از فایل‌های کانفیگ خالی است.")
+                        }
+                        val pool = downloadPool ?: throw IOException("موتور دریافت فایل آماده نیست.")
+                        fileTasks += index to pool.submit(Callable { downloadPrivateFile(path).trim() })
+                    }
+                }
+            }
+            // File signing and download run in parallel, but imports still follow the
+            // admin's order so selection and replace semantics remain deterministic.
+            for ((index, future) in fileTasks) {
+                try {
+                    payloadByIndex[index] = future.get()
+                } catch (error: ExecutionException) {
+                    val cause = error.cause
+                    throw (cause as? IOException
+                        ?: IOException("دریافت یکی از فایل‌های کانفیگ ناموفق بود.", cause))
+                } catch (error: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("دریافت کانفیگ‌ها متوقف شد.", error)
+                }
+            }
+        } finally {
+            downloadPool?.shutdownNow()
+        }
+        val payloads = payloadByIndex.filterNotNull().filter { it.isNotBlank() }
 
         if (payloads.isEmpty()) {
             throw IOException("هیچ محتوای کانفیگ قابل واردکردنی در سایت پیدا نشد.")

@@ -722,6 +722,10 @@ object MoghimiLicenseManager {
                     paidExpiresAt = result.optString("paid_expires_at")
                         .takeIf { it.isNotBlank() && it != "null" },
                     accessAllowed = result.optBoolean("access_allowed"),
+                    networkAvailable = true,
+                    isServerVerified = true,
+                    lastVerifiedAtMs = System.currentTimeMillis(),
+                    error = null,
                     updateAvailable = releaseState.updateAvailable,
                     latestVersionName = releaseState.latestVersionName,
                     latestVersionCode = releaseState.latestVersionCode,

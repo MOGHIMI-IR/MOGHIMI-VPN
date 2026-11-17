@@ -96,13 +96,13 @@ old_request = """    private fun requestServiceStart() {
     }"""
 new_request = """    private fun startSmartConnection() {
         if (smartConnectInFlight || entitlementCheckInFlight) return
-        if (moghimiSyncRunning) {
-            Toast.makeText(this, "همگام‌سازی سرورها هنوز تمام نشده است.", Toast.LENGTH_SHORT).show()
-            return
-        }
         smartConnectInFlight = true
         lifecycleScope.launch {
             try {
+                if (!awaitMoghimiConfigSync()) {
+                    toastError("آماده‌سازی سرورها طول کشید؛ دوباره تلاش کنید.")
+                    return@launch
+                }
                 val allowed = withContext(Dispatchers.IO) {
                     MoghimiLicenseManager.canStartConnection(this@MainActivity)
                 }
@@ -179,15 +179,23 @@ new_request = """    private fun startSmartConnection() {
         }
     }
 
+    private suspend fun awaitMoghimiConfigSync(): Boolean {
+        if (!moghimiSyncRunning) return true
+        return withTimeoutOrNull(20_000L) {
+            while (moghimiSyncRunning) kotlinx.coroutines.delay(100L)
+            true
+        } == true
+    }
+
     private fun requestServiceStart() {
         if (entitlementCheckInFlight) return
-        if (moghimiSyncRunning) {
-            Toast.makeText(this, "دریافت کانفیگ‌ها هنوز تمام نشده است.", Toast.LENGTH_SHORT).show()
-            return
-        }
         entitlementCheckInFlight = true
         lifecycleScope.launch {
             try {
+                if (!awaitMoghimiConfigSync()) {
+                    toastError("آماده‌سازی سرورها طول کشید؛ دوباره تلاش کنید.")
+                    return@launch
+                }
                 val allowed = withContext(Dispatchers.IO) {
                     MoghimiLicenseManager.canStartConnection(this@MainActivity)
                 }

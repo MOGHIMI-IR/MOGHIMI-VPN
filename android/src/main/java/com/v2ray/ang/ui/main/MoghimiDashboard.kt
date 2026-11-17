@@ -3,10 +3,12 @@ package com.v2ray.ang.ui.main
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -41,17 +43,20 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -87,6 +92,8 @@ fun MoghimiRootScreen(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var smartConnectEnabled by rememberSaveable { mutableStateOf(false) }
+    var startupChecksComplete by remember { mutableStateOf(false) }
+    var showStartupOverlay by remember { mutableStateOf(true) }
     val context = LocalContext.current
     val license by com.v2ray.ang.MoghimiLicenseManager.state.collectAsStateWithLifecycle()
 
@@ -98,12 +105,18 @@ fun MoghimiRootScreen(
             val statusCheck = async(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching { com.v2ray.ang.MoghimiLicenseManager.refreshStatus(context) }
             }
+            // Show the branded entry transition briefly, while network checks continue
+            // in parallel. Slow servers never hold the user behind a long splash.
+            kotlinx.coroutines.delay(650L)
+            showStartupOverlay = false
             releaseCheck.await()
             statusCheck.await()
+            startupChecksComplete = true
         }
     }
-    LaunchedEffect(license.isRegistered) {
-        if (!license.isRegistered) selectedTab = 2
+    LaunchedEffect(startupChecksComplete, license.isRegistered) {
+        // Do not route to profile from the default, unverified StateFlow value.
+        if (startupChecksComplete && !license.isRegistered) selectedTab = 2
     }
     LaunchedEffect(
         license.isRegistered,
@@ -137,7 +150,7 @@ fun MoghimiRootScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (license.isLoading) {
+            if (license.isLoading || !startupChecksComplete) {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth(),
                     color = Color(0xFFA98BFF),
@@ -158,7 +171,9 @@ fun MoghimiRootScreen(
                         smartConnectEnabled = smartConnectEnabled,
                         onSmartConnectChange = { smartConnectEnabled = it },
                         onConnectClick = {
-                            if (mainViewModel.uiState.value.isRunning) {
+                            if (!startupChecksComplete) {
+                                // Keep the button inert only during the brief account bootstrap.
+                            } else if (mainViewModel.uiState.value.isRunning) {
                                 onAction(MainAction.ToggleService)
                             } else if (smartConnectEnabled) {
                                 onSmartConnectClick()
@@ -249,6 +264,47 @@ fun MoghimiRootScreen(
                     label = { Text("تنظیمات") },
                     colors = moghimiNavigationColors()
                 )
+            }
+        }
+        if (showStartupOverlay) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFF090D20), Color(0xFF171431), Color(0xFF24164B))
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Image(
+                        painter = painterResource(R.drawable.moghimi_logo),
+                        contentDescription = "Moghimi V2Ray",
+                        modifier = Modifier
+                            .size(82.dp)
+                            .clip(CircleShape)
+                    )
+                    Spacer(Modifier.height(18.dp))
+                    Text(
+                        "Moghimi V2Ray",
+                        color = Color(0xFFF2EEFF),
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "در حال آماده‌سازی اتصال امن",
+                        color = Color(0xFFBFB3ED),
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(18.dp))
+                    LinearProgressIndicator(
+                        modifier = Modifier.width(148.dp),
+                        color = Color(0xFFB18CFF),
+                        trackColor = Color(0xFF3A315D)
+                    )
+                }
             }
         }
     }
@@ -562,11 +618,26 @@ private fun MoghimiConnectionOrb(
         ),
         label = "orb-rotation"
     )
-    val accent = if (connected) Color(0xFF55E5BC) else Color(0xFFB18CFF)
+    val targetAccent = if (connected) Color(0xFF55E5BC) else Color(0xFFB18CFF)
+    val accent by animateColorAsState(
+        targetValue = targetAccent,
+        animationSpec = tween(650, easing = FastOutSlowInEasing),
+        label = "orb-connection-color"
+    )
+    val orbScale by animateFloatAsState(
+        targetValue = if (connected) 1.035f else 1f,
+        animationSpec = tween(520, easing = FastOutSlowInEasing),
+        label = "orb-connection-scale"
+    )
     val secondary = Color(0xFF7C5CFF)
 
     Box(
-        modifier = Modifier.size(264.dp),
+        modifier = Modifier
+            .size(264.dp)
+            .graphicsLayer {
+                scaleX = orbScale
+                scaleY = orbScale
+            },
         contentAlignment = Alignment.Center
     ) {
         Canvas(Modifier.fillMaxSize()) {
