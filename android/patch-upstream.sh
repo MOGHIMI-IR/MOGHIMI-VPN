@@ -1310,13 +1310,17 @@ elif new_handover not in core_manager:
     raise SystemExit("Could not locate network handover callback")
 handover_retry = """    private fun reloadCoreWithRetry() {
         val service = getService() ?: return
+        var failureAlreadyReported = false
         for (attempt in 0 until 3) {
-            val recovered = if (isRunning()) {
+            val coreWasRunning = isRunning()
+            val recovered = if (coreWasRunning) {
                 reloadCore()
             } else {
                 try {
                     isReloading = true
-                    launchCore(service, currentVpnInterface, isReload = true)
+                    // A full restart must emit START_SUCCESS so the UI can recover
+                    // if an earlier failed handover already marked it disconnected.
+                    launchCore(service, currentVpnInterface, isReload = false)
                     true
                 } catch (error: Exception) {
                     LogUtil.e(
@@ -1330,6 +1334,7 @@ handover_retry = """    private fun reloadCoreWithRetry() {
                 }
             }
             if (recovered) return
+            if (coreWasRunning) failureAlreadyReported = true
             LogUtil.w(
                 AppConfig.TAG,
                 "StartCore-Manager: Network recovery attempt ${attempt + 1} failed"
@@ -1342,6 +1347,13 @@ handover_retry = """    private fun reloadCoreWithRetry() {
                     return
                 }
             }
+        }
+        if (!failureAlreadyReported && !isRunning()) {
+            MessageHelper.sendMsg2UI(
+                service,
+                AppConfig.MSG_STATE_START_FAILURE,
+                "بازیابی اتصال پس از تغییر شبکه انجام نشد؛ دوباره اتصال را بزنید."
+            )
         }
         LogUtil.e(AppConfig.TAG, "StartCore-Manager: Network recovery failed after retries")
     }
