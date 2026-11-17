@@ -180,11 +180,10 @@ jobs:
         shell: bash
         env:
           SUPABASE_STORAGE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_STORAGE_SERVICE_ROLE_KEY }}
-          SUPABASE_APP_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_APP_SERVICE_ROLE_KEY }}
         run: |
-          if [[ -z "$SUPABASE_STORAGE_SERVICE_ROLE_KEY" || -z "$SUPABASE_APP_SERVICE_ROLE_KEY" ]]; then
-            echo "status=skipped (separate Storage and App project secrets are required)" >> "$GITHUB_OUTPUT"
-            echo "::warning::APK is published on GitHub, but Supabase sync was skipped. Configure SUPABASE_STORAGE_SERVICE_ROLE_KEY for project atrwhvyhopifugphfcpe and SUPABASE_APP_SERVICE_ROLE_KEY for project qaxiunpklkbgfjwmpwfp."
+          if [[ -z "$SUPABASE_STORAGE_SERVICE_ROLE_KEY" ]]; then
+            echo "status=skipped (SUPABASE_STORAGE_SERVICE_ROLE_KEY is required)" >> "$GITHUB_OUTPUT"
+            echo "::warning::APK is published on GitHub, but Supabase Storage sync was skipped. Add the service_role key for project atrwhvyhopifugphfcpe as repository secret SUPABASE_STORAGE_SERVICE_ROLE_KEY."
             exit 0
           fi
 
@@ -206,41 +205,47 @@ jobs:
             --data-binary @"$APK" \
             --output "$RUNNER_TEMP/supabase-upload-response.json"
 
-          # Verify the public object, not only the authenticated upload response.
+          # Verify the public object bytes before checking the existing DB webhook.
           curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
             "$PUBLIC_URL?moghimi_build=${GITHUB_RUN_NUMBER}" \
             --output "$RUNNER_TEMP/supabase-verified.apk"
 
           EXPECTED_SHA="$(sha256sum "$APK" | awk '{print $1}')"
           ACTUAL_SHA="$(sha256sum "$RUNNER_TEMP/supabase-verified.apk" | awk '{print $1}')"
-          if [[ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]]; then
-            echo "::error::Supabase public APK does not match the newly published GitHub APK."
-            exit 1
-          fi
-          if ! cmp --silent "$APK" "$RUNNER_TEMP/supabase-verified.apk"; then
-            echo "::error::Supabase APK byte comparison failed."
+          if [[ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]] || ! cmp --silent "$APK" "$RUNNER_TEMP/supabase-verified.apk"; then
+            echo "::error::Supabase public APK does not exactly match the newly built GitHub APK."
             exit 1
           fi
 
-          # Publish release metadata only after public Storage verification succeeds.
-          RELEASE_NOTES="Moghimi V2Ray ${VERSION_NAME} (build ${GITHUB_RUN_NUMBER})"
-          RELEASE_PAYLOAD="$(jq -n \
-            --arg version_name "$VERSION_NAME" \
-            --argjson version_code "$VERSION_CODE" \
-            --arg apk_url "$PUBLIC_URL" \
-            --arg sha256 "$EXPECTED_SHA" \
-            --arg release_notes "$RELEASE_NOTES" \
-            '{p_version_name:$version_name,p_version_code:$version_code,p_apk_url:$apk_url,p_sha256:$sha256,p_release_notes:$release_notes}')"
-          curl --fail-with-body --silent --show-error --retry 3 --retry-delay 2 \
-            --request POST "https://qaxiunpklkbgfjwmpwfp.supabase.co/rest/v1/rpc/moghimi_publish_release" \
-            --header "apikey: $SUPABASE_APP_SERVICE_ROLE_KEY" \
-            --header "Authorization: Bearer $SUPABASE_APP_SERVICE_ROLE_KEY" \
-            --header "Content-Type: application/json" \
-            --data "$RELEASE_PAYLOAD" \
-            --output "$RUNNER_TEMP/release-publish-response.json"
-          cat "$RUNNER_TEMP/release-publish-response.json"
-          echo "status=uploaded, verified and registered as latest release" >> "$GITHUB_OUTPUT"
-          echo "Supabase Storage object and app_releases metadata were published."
+          # Uploading into storage.objects triggers the already configured
+          # trg_moghimi_auto_register_app_release trigger. Its webhook uses the
+          # protected Vault secret and app-project service role; Actions only
+          # needs the Storage project's service_role key.
+          APP_API="https://qaxiunpklkbgfjwmpwfp.supabase.co/functions/v1/moghimi-api"
+          APP_PUBLISHABLE_KEY="sb_publishable_tqUEU2cyQTgE4HUTR3_UYA_15fGU_Zf"
+          REGISTERED=false
+          for attempt in $(seq 1 24); do
+            RESPONSE="$(curl --fail-with-body --silent --show-error \
+              --request POST "$APP_API" \
+              --header "apikey: $APP_PUBLISHABLE_KEY" \
+              --header "Content-Type: application/json" \
+              --data '{"action":"release"}')"
+            RELEASE_CODE="$(jq -r '.release.version_code // empty' <<< "$RESPONSE")"
+            RELEASE_SHA="$(jq -r '.release.sha256 // empty' <<< "$RESPONSE")"
+            if [[ "$RELEASE_CODE" == "$VERSION_CODE" && "$RELEASE_SHA" == "$EXPECTED_SHA" ]]; then
+              REGISTERED=true
+              break
+            fi
+            sleep 5
+          done
+
+          if [[ "$REGISTERED" != true ]]; then
+            echo "::error::The Storage webhook did not register build $GITHUB_RUN_NUMBER in app_releases."
+            echo "Last API response: $RESPONSE"
+            exit 1
+          fi
+          echo "status=uploaded, verified and auto-registered by Storage webhook" >> "$GITHUB_OUTPUT"
+          echo "Supabase Storage bytes and app_releases metadata were verified."
 
       - name: Write build summary
         if: always()
