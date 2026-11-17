@@ -322,7 +322,7 @@ object MoghimiLicenseManager {
             mutableState.value = mutableState.value.copy(
                 isRegistered = true, username = recoveredUsername, phone = recoveredPhone, error = null
             )
-            refreshStatus(context)
+            refreshStatus(context, force = true)
             true
         } catch (error: Exception) {
             if (error.localizedMessage == errorMessage("device_not_registered", 404)) {
@@ -421,7 +421,7 @@ object MoghimiLicenseManager {
             .putString("phone", phone.orEmpty())
             .apply()
         mutableState.value = mutableState.value.copy(isRegistered = true, username = username, phone = phone.orEmpty())
-        return refreshStatus(context)
+        return refreshStatus(context, force = true)
     }
 
     private fun hasInternetConnection(context: Context): Boolean {
@@ -591,7 +591,7 @@ object MoghimiLicenseManager {
         if (!result.optBoolean("ok")) {
             throw IllegalStateException(errorMessage(result.optString("code"), 409))
         }
-        return refreshStatus(context)
+        return refreshStatus(context, force = true)
     }
 
     /**

@@ -136,6 +136,7 @@ new_request = """    private fun startSmartConnection() {
                 }
 
                 val groupId = MoghimiCloudSync.CLOUD_GROUP_ID
+                mainViewModel.onAction(MainAction.Search(""))
                 mainViewModel.onAction(MainAction.SelectGroup(groupId))
                 var servers = withTimeoutOrNull(12_000L) {
                     mainViewModel.serversForGroup(groupId).first { it.isNotEmpty() }
