@@ -90,6 +90,7 @@ fun MoghimiRootScreen(
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var smartConnectMode by rememberSaveable { mutableIntStateOf(0) }
+    var pendingConnectRequest by rememberSaveable { mutableIntStateOf(0) }
     var startupChecksComplete by remember { mutableIntStateOf(0) }
     var showStartupOverlay by remember { mutableIntStateOf(1) }
     val context = LocalContext.current
@@ -115,6 +116,27 @@ fun MoghimiRootScreen(
     LaunchedEffect(startupChecksComplete, license.isRegistered) {
         // Do not route to profile from the default, unverified StateFlow value.
         if (startupChecksComplete == 1 && !license.isRegistered) selectedTab = 2
+    }
+
+    LaunchedEffect(
+        startupChecksComplete,
+        pendingConnectRequest,
+        smartConnectMode,
+        license.isRegistered,
+        license.accessAllowed
+    ) {
+        if (startupChecksComplete == 1 && pendingConnectRequest == 1) {
+            pendingConnectRequest = 0
+            when {
+                mainViewModel.uiState.value.isRunning ->
+                    onAction(MainAction.ToggleService)
+                smartConnectMode == 1 ->
+                    onSmartConnectClick()
+                license.isRegistered && license.accessAllowed ->
+                    onAction(MainAction.ToggleService)
+                else -> selectedTab = 2
+            }
+        }
     }
     LaunchedEffect(
         license.isRegistered,
@@ -170,7 +192,8 @@ fun MoghimiRootScreen(
                         onSmartConnectChange = { smartConnectMode = if (it) 1 else 0 },
                         onConnectClick = {
                             if (startupChecksComplete == 0) {
-                                // Keep the button inert only during the brief account bootstrap.
+                                // Preserve the first tap; replay once the initial account check finishes.
+                                pendingConnectRequest = 1
                             } else if (mainViewModel.uiState.value.isRunning) {
                                 onAction(MainAction.ToggleService)
                             } else if (smartConnectMode == 1) {
