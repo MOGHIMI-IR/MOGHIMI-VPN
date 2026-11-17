@@ -179,23 +179,27 @@ jobs:
         if: github.ref == 'refs/heads/main'
         shell: bash
         env:
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_STORAGE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_STORAGE_SERVICE_ROLE_KEY }}
+          SUPABASE_APP_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_APP_SERVICE_ROLE_KEY }}
         run: |
-          if [[ -z "$SUPABASE_SERVICE_ROLE_KEY" ]]; then
-            echo "status=skipped (SUPABASE_SERVICE_ROLE_KEY secret is not configured)" >> "$GITHUB_OUTPUT"
-            echo "::warning::APK is published on GitHub, but Supabase sync was skipped. Add SUPABASE_SERVICE_ROLE_KEY to repository Actions secrets to enable it."
+          if [[ -z "$SUPABASE_STORAGE_SERVICE_ROLE_KEY" || -z "$SUPABASE_APP_SERVICE_ROLE_KEY" ]]; then
+            echo "status=skipped (separate Storage and App project secrets are required)" >> "$GITHUB_OUTPUT"
+            echo "::warning::APK is published on GitHub, but Supabase sync was skipped. Configure SUPABASE_STORAGE_SERVICE_ROLE_KEY for project atrwhvyhopifugphfcpe and SUPABASE_APP_SERVICE_ROLE_KEY for project qaxiunpklkbgfjwmpwfp."
             exit 0
           fi
 
-          APK="release-files/MoghimiV2Ray_2.0.8_arm64-v8a.apk"
+          VERSION_NAME="2.0.8"
+          VERSION_CODE="$((4000000 + GITHUB_RUN_NUMBER))"
+          APK="release-files/MoghimiV2Ray_${VERSION_NAME}_arm64-v8a.apk"
           test -s "$APK"
-          OBJECT_URL="https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20%281%29.apk"
-          PUBLIC_URL="https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20%281%29.apk"
+          OBJECT_NAME="MoghimiV2Ray_${VERSION_NAME}_arm64-v8a.apk"
+          OBJECT_URL="https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/app-releases/$OBJECT_NAME"
+          PUBLIC_URL="https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/$OBJECT_NAME"
 
           curl --fail-with-body --silent --show-error --retry 3 --retry-delay 2 \
             --request POST "$OBJECT_URL" \
-            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "apikey: $SUPABASE_STORAGE_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_STORAGE_SERVICE_ROLE_KEY" \
             --header "Content-Type: application/vnd.android.package-archive" \
             --header "Cache-Control: max-age=60" \
             --header "x-upsert: true" \
@@ -219,8 +223,6 @@ jobs:
           fi
 
           # Publish release metadata only after public Storage verification succeeds.
-          VERSION_NAME="2.0.8"
-          VERSION_CODE="$((4000000 + GITHUB_RUN_NUMBER))"
           RELEASE_NOTES="Moghimi V2Ray ${VERSION_NAME} (build ${GITHUB_RUN_NUMBER})"
           RELEASE_PAYLOAD="$(jq -n \
             --arg version_name "$VERSION_NAME" \
@@ -231,8 +233,8 @@ jobs:
             '{p_version_name:$version_name,p_version_code:$version_code,p_apk_url:$apk_url,p_sha256:$sha256,p_release_notes:$release_notes}')"
           curl --fail-with-body --silent --show-error --retry 3 --retry-delay 2 \
             --request POST "https://qaxiunpklkbgfjwmpwfp.supabase.co/rest/v1/rpc/moghimi_publish_release" \
-            --header "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
-            --header "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            --header "apikey: $SUPABASE_APP_SERVICE_ROLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_APP_SERVICE_ROLE_KEY" \
             --header "Content-Type: application/json" \
             --data "$RELEASE_PAYLOAD" \
             --output "$RUNNER_TEMP/release-publish-response.json"
