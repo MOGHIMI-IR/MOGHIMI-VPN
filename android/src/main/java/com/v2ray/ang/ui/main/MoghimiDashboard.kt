@@ -43,13 +43,11 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -91,9 +89,9 @@ fun MoghimiRootScreen(
     onNavigate: (MainDestination) -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
-    var smartConnectEnabled by rememberSaveable { mutableStateOf(false) }
-    var startupChecksComplete by remember { mutableStateOf(false) }
-    var showStartupOverlay by remember { mutableStateOf(true) }
+    var smartConnectMode by rememberSaveable { mutableIntStateOf(0) }
+    var startupChecksComplete by remember { mutableIntStateOf(0) }
+    var showStartupOverlay by remember { mutableIntStateOf(1) }
     val context = LocalContext.current
     val license by com.v2ray.ang.MoghimiLicenseManager.state.collectAsStateWithLifecycle()
 
@@ -108,15 +106,15 @@ fun MoghimiRootScreen(
             // Show the branded entry transition briefly, while network checks continue
             // in parallel. Slow servers never hold the user behind a long splash.
             kotlinx.coroutines.delay(650L)
-            showStartupOverlay = false
+            showStartupOverlay = 0
             releaseCheck.await()
             statusCheck.await()
-            startupChecksComplete = true
+            startupChecksComplete = 1
         }
     }
     LaunchedEffect(startupChecksComplete, license.isRegistered) {
         // Do not route to profile from the default, unverified StateFlow value.
-        if (startupChecksComplete && !license.isRegistered) selectedTab = 2
+        if (startupChecksComplete == 1 && !license.isRegistered) selectedTab = 2
     }
     LaunchedEffect(
         license.isRegistered,
@@ -150,7 +148,7 @@ fun MoghimiRootScreen(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (license.isLoading || !startupChecksComplete) {
+            if (license.isLoading || startupChecksComplete == 0) {
                 LinearProgressIndicator(
                     modifier = Modifier.fillMaxWidth(),
                     color = Color(0xFFA98BFF),
@@ -168,14 +166,14 @@ fun MoghimiRootScreen(
                 when (page) {
                     0 -> MoghimiConnectionPage(
                         mainViewModel = mainViewModel,
-                        smartConnectEnabled = smartConnectEnabled,
-                        onSmartConnectChange = { smartConnectEnabled = it },
+                        smartConnectEnabled = smartConnectMode == 1,
+                        onSmartConnectChange = { smartConnectMode = if (it) 1 else 0 },
                         onConnectClick = {
-                            if (!startupChecksComplete) {
+                            if (startupChecksComplete == 0) {
                                 // Keep the button inert only during the brief account bootstrap.
                             } else if (mainViewModel.uiState.value.isRunning) {
                                 onAction(MainAction.ToggleService)
-                            } else if (smartConnectEnabled) {
+                            } else if (smartConnectMode == 1) {
                                 onSmartConnectClick()
                             } else if (license.isRegistered && license.accessAllowed) {
                                 onAction(MainAction.ToggleService)
@@ -266,7 +264,7 @@ fun MoghimiRootScreen(
                 )
             }
         }
-        if (showStartupOverlay) {
+        if (showStartupOverlay == 1) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -487,10 +485,33 @@ private fun MoghimiConnectionPage(
                         fontSize = 10.sp
                     )
                 }
-                Switch(
-                    checked = smartConnectEnabled,
-                    onCheckedChange = onSmartConnectChange
+                val toggleColor by animateColorAsState(
+                    targetValue = if (smartConnectEnabled) Color(0xFF8D6BFF) else Color(0xFF4A526C),
+                    animationSpec = tween(220),
+                    label = "smart-connect-toggle"
                 )
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(30.dp))
+                        .background(toggleColor.copy(alpha = 0.30f))
+                        .clickable { onSmartConnectChange(!smartConnectEnabled) }
+                        .padding(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .clip(CircleShape)
+                            .background(if (smartConnectEnabled) Color(0xFFBFA8FF) else Color(0xFF7D859D))
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        if (smartConnectEnabled) "روشن" else "خاموش",
+                        color = if (smartConnectEnabled) Color(0xFFE8DEFF) else Color(0xFFAEB7D0),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
 

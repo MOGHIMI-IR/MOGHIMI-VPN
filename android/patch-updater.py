@@ -29,6 +29,24 @@ if "import com.v2ray.ang.MoghimiLicenseManager\n" not in source:
         "import com.v2ray.ang.AngApplication\nimport com.v2ray.ang.MoghimiLicenseManager\n",
         "subscription manager import"
     )
+if "import com.v2ray.ang.MoghimiCloudSync\n" not in source:
+    replace_once(
+        "import com.v2ray.ang.MoghimiLicenseManager\n",
+        "import com.v2ray.ang.MoghimiLicenseManager\nimport com.v2ray.ang.MoghimiCloudSync\n",
+        "cloud sync import"
+    )
+if "import kotlinx.coroutines.flow.first\n" not in source:
+    replace_once(
+        "import kotlinx.coroutines.Dispatchers\n",
+        "import kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.flow.first\n",
+        "flow first import"
+    )
+if "import kotlinx.coroutines.withTimeoutOrNull\n" not in source:
+    replace_once(
+        "import kotlinx.coroutines.withContext\n",
+        "import kotlinx.coroutines.withContext\nimport kotlinx.coroutines.withTimeoutOrNull\n",
+        "timeout import"
+    )
 
 # Keep device entitlement checking in one place and prevent duplicate start taps.
 replace_once(
