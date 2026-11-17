@@ -1309,11 +1309,30 @@ if old_handover in core_manager:
 elif new_handover not in core_manager:
     raise SystemExit("Could not locate network handover callback")
 handover_retry = """    private fun reloadCoreWithRetry() {
+        val service = getService() ?: return
         for (attempt in 0 until 3) {
-            if (reloadCore()) return
+            val recovered = if (isRunning()) {
+                reloadCore()
+            } else {
+                try {
+                    isReloading = true
+                    launchCore(service, currentVpnInterface, isReload = true)
+                    true
+                } catch (error: Exception) {
+                    LogUtil.e(
+                        AppConfig.TAG,
+                        "StartCore-Manager: Failed to restart core after network loss",
+                        error
+                    )
+                    false
+                } finally {
+                    isReloading = false
+                }
+            }
+            if (recovered) return
             LogUtil.w(
                 AppConfig.TAG,
-                "StartCore-Manager: Network handover reload attempt ${attempt + 1} failed"
+                "StartCore-Manager: Network recovery attempt ${attempt + 1} failed"
             )
             if (attempt < 2) {
                 try {
@@ -1324,7 +1343,7 @@ handover_retry = """    private fun reloadCoreWithRetry() {
                 }
             }
         }
-        LogUtil.e(AppConfig.TAG, "StartCore-Manager: Network handover recovery failed after retries")
+        LogUtil.e(AppConfig.TAG, "StartCore-Manager: Network recovery failed after retries")
     }
 
 """
@@ -1334,6 +1353,63 @@ if "private fun reloadCoreWithRetry()" not in core_manager:
         raise SystemExit("Could not locate CoreServiceManager reloadCore insertion point")
     core_manager = core_manager.replace(marker, handover_retry + marker, 1)
 core_manager_file.write_text(core_manager, encoding="utf-8")
+
+
+network_monitor_file = java / "service/NetworkMonitor.kt"
+replace_once(
+    network_monitor_file,
+    """    private var upstream: Network? = null
+    private var handoverJob: Job? = null""",
+    """    private var upstream: Network? = null
+    private var awaitingReconnect = false
+    private var handoverJob: Job? = null""",
+    "track complete network loss"
+)
+replace_once(
+    network_monitor_file,
+    """        override fun onAvailable(network: Network) {
+            val previous = upstream
+            upstream = network
+            onUnderlyingNetworksChanged(arrayOf(network))
+            if (previous != null && previous != network) {
+                scheduleHandover(network)
+            }
+        }""",
+    """        override fun onAvailable(network: Network) {
+            val previous = upstream
+            val recoveredAfterLoss = awaitingReconnect
+            upstream = network
+            awaitingReconnect = false
+            onUnderlyingNetworksChanged(arrayOf(network))
+            if (recoveredAfterLoss || (previous != null && previous != network)) {
+                scheduleHandover(network)
+            }
+        }""",
+    "reconnect on same network handle"
+)
+replace_once(
+    network_monitor_file,
+    """        override fun onLost(network: Network) {
+            onUnderlyingNetworksChanged(null)
+        }""",
+    """        override fun onLost(network: Network) {
+            if (network == upstream) {
+                upstream = null
+                awaitingReconnect = true
+                onUnderlyingNetworksChanged(null)
+            }
+        }""",
+    "track lost current upstream"
+)
+replace_once(
+    network_monitor_file,
+    """        upstream = null
+        if (!registered) return""",
+    """        upstream = null
+        awaitingReconnect = false
+        if (!registered) return""",
+    "reset reconnect state on unregister"
+)
 
 
 PY

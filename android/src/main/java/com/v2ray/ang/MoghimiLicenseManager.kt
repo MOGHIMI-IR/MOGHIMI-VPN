@@ -329,9 +329,15 @@ object MoghimiLicenseManager {
                 mutableState.value = MoghimiLicenseUiState()
                 false
             } else {
+                val online = hasInternetConnection(context)
                 mutableState.value = mutableState.value.copy(
                     isLoading = false,
-                    error = error.localizedMessage ?: "بازیابی حساب دستگاه انجام نشد."
+                    networkAvailable = online,
+                    error = if (online) {
+                        error.localizedMessage ?: "بازیابی حساب دستگاه انجام نشد."
+                    } else {
+                        "اینترنت قطع است؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید."
+                    }
                 )
                 throw error
             }
@@ -403,25 +409,43 @@ object MoghimiLicenseManager {
         }
 
         mutableState.value = mutableState.value.copy(isLoading = true, error = null)
-        val token = loadToken(context) ?: generateToken()
-        val response = JSONObject()
-            .put("action", "register")
-            .put("device_hash", deviceHash(context))
-            .put("device_token", token)
-            .put("username", username)
-            .put("phone", phone ?: JSONObject.NULL)
-        val result = callApi(response)
-        if (!result.optBoolean("ok")) {
-            throw IllegalStateException(errorMessage(result.optString("code"), 409))
+        return try {
+            val token = loadToken(context) ?: generateToken()
+            val response = JSONObject()
+                .put("action", "register")
+                .put("device_hash", deviceHash(context))
+                .put("device_token", token)
+                .put("username", username)
+                .put("phone", phone ?: JSONObject.NULL)
+            val result = callApi(response)
+            if (!result.optBoolean("ok")) {
+                throw IllegalStateException(errorMessage(result.optString("code"), 409))
+            }
+            saveToken(context, token)
+            prefs(context).edit()
+                .putString("username", username)
+                .putString("phone", phone.orEmpty())
+                .apply()
+            mutableState.value = mutableState.value.copy(
+                isRegistered = true,
+                username = username,
+                phone = phone.orEmpty(),
+                networkAvailable = true
+            )
+            refreshStatus(context, force = true)
+        } catch (error: Exception) {
+            val online = hasInternetConnection(context)
+            mutableState.value = mutableState.value.copy(
+                isLoading = false,
+                networkAvailable = online,
+                error = if (online) {
+                    error.localizedMessage ?: "ثبت پروفایل انجام نشد."
+                } else {
+                    "اینترنت قطع است؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید."
+                }
+            )
+            throw error
         }
-
-        saveToken(context, token)
-        prefs(context).edit()
-            .putString("username", username)
-            .putString("phone", phone.orEmpty())
-            .apply()
-        mutableState.value = mutableState.value.copy(isRegistered = true, username = username, phone = phone.orEmpty())
-        return refreshStatus(context, force = true)
     }
 
     private fun hasInternetConnection(context: Context): Boolean {
@@ -452,8 +476,11 @@ object MoghimiLicenseManager {
     fun refreshStatus(context: Context, force: Boolean = false): MoghimiLicenseUiState {
         val appContext = context.applicationContext
         if (!hasProfile(appContext)) {
+            val online = hasInternetConnection(appContext)
             val empty = MoghimiLicenseUiState(
-                networkAvailable = hasInternetConnection(appContext)
+                networkAvailable = online,
+                error = if (online) null else
+                    "اینترنت قطع است؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید."
             )
             mutableState.value = empty
             return empty
@@ -541,14 +568,19 @@ object MoghimiLicenseManager {
                 mutableState.value = denied
                 return denied
             }
+            val online = hasInternetConnection(appContext)
             val cached = loadCachedStatus(appContext)
             val fallback = (cached ?: mutableState.value).copy(
                 isRegistered = true,
                 username = username(appContext),
                 phone = phone(appContext),
                 isLoading = false,
-                networkAvailable = true,
-                error = "سرور بررسی اشتراک فعلاً پاسخ نمی‌دهد؛ اتصال را دوباره بررسی کنید."
+                networkAvailable = online,
+                error = if (online) {
+                    "سرور بررسی اشتراک فعلاً پاسخ نمی‌دهد؛ اتصال را دوباره بررسی کنید."
+                } else {
+                    "اینترنت قطع است؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید."
+                }
             )
             mutableState.value = fallback
             mutableState.value
@@ -586,12 +618,26 @@ object MoghimiLicenseManager {
     }
 
     fun claimActivationCode(context: Context, code: String): MoghimiLicenseUiState {
-        val request = baseRequest(context, "claim").put("activation_code", code.trim())
-        val result = callApi(request)
-        if (!result.optBoolean("ok")) {
-            throw IllegalStateException(errorMessage(result.optString("code"), 409))
+        return try {
+            val request = baseRequest(context, "claim").put("activation_code", code.trim())
+            val result = callApi(request)
+            if (!result.optBoolean("ok")) {
+                throw IllegalStateException(errorMessage(result.optString("code"), 409))
+            }
+            refreshStatus(context, force = true)
+        } catch (error: Exception) {
+            val online = hasInternetConnection(context)
+            mutableState.value = mutableState.value.copy(
+                isLoading = false,
+                networkAvailable = online,
+                error = if (online) {
+                    error.localizedMessage ?: "فعال‌سازی کد انجام نشد."
+                } else {
+                    "اینترنت قطع است؛ اتصال اینترنت را بررسی کنید و دوباره تلاش کنید."
+                }
+            )
+            throw error
         }
-        return refreshStatus(context, force = true)
     }
 
     /**
