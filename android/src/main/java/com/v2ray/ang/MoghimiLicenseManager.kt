@@ -254,6 +254,19 @@ object MoghimiLicenseManager {
         val now = System.currentTimeMillis()
         val lastChecked = p.getLong(RELEASE_VERIFIED_AT, 0L)
         val cached = p.getString(CACHE_RELEASE, null)
+
+        // Do not hold the startup screen on a 4s/5s HTTP timeout when the
+        // device has no validated internet connection. The next online launch
+        // will perform the normal release check and enforce the update gate.
+        if (!hasInternetConnection(appContext)) {
+            if (!cached.isNullOrBlank()) {
+                return runCatching {
+                    applyReleaseInfo(appContext, JSONObject(cached))
+                }.getOrElse { mutableState.value }
+            }
+            return mutableState.value
+        }
+
         if (lastChecked > 0L && now >= lastChecked && now - lastChecked < RELEASE_CACHE_TTL_MS) {
             if (!cached.isNullOrBlank()) {
                 return runCatching {
