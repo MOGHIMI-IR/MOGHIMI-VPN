@@ -49,7 +49,7 @@ source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
     ("versionCode = 755", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
-    ('versionName = "2.3.15"', 'versionName = "2.0.7"', "versionName"),
+    ('versionName = "2.3.15"', 'versionName = "2.0.8"', "versionName"),
 ]:
     if source.count(old) != 1:
         raise SystemExit(f"Expected one Gradle match for {label}")
@@ -1296,6 +1296,44 @@ replace_once(
 )
 
 print("Moghimi cloud server export/share restrictions applied.")
+
+# Improve upstream-network handover recovery.
+core_manager_file = java / "core/CoreServiceManager.kt"
+core_manager = core_manager_file.read_text(encoding="utf-8")
+replace_once(
+    core_manager_file,
+    "onHandover = { reloadCore() },",
+    "onHandover = { reloadCoreWithRetry() },",
+    "retry core reload after network handover"
+)
+handover_retry = """    private fun reloadCoreWithRetry() {
+        for (attempt in 0 until 3) {
+            if (reloadCore()) return
+            LogUtil.w(
+                AppConfig.TAG,
+                "StartCore-Manager: Network handover reload attempt ${attempt + 1} failed"
+            )
+            if (attempt < 2) {
+                try {
+                    Thread.sleep(1_000L * (attempt + 1))
+                } catch (interrupted: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return
+                }
+            }
+        }
+        LogUtil.e(AppConfig.TAG, "StartCore-Manager: Network handover recovery failed after retries")
+    }
+
+"""
+marker = "    private fun reloadCore(): Boolean {"
+if core_manager.count("private fun reloadCoreWithRetry()") == 0:
+    if core_manager.count(marker) != 1:
+        raise SystemExit("Could not locate CoreServiceManager reloadCore insertion point")
+    core_manager = core_manager.replace(marker, handover_retry + marker, 1)
+    core_manager_file.write_text(core_manager, encoding="utf-8")
+
+
 PY
 
 echo "Prepared branded Android source under $PROJECT"

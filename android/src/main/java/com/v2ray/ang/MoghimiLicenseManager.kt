@@ -349,7 +349,7 @@ object MoghimiLicenseManager {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             // Publishable key only; no service-role or database secret is shipped in the APK.
             setRequestProperty("apikey", API_KEY)
-            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.7")
+            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.8")
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -374,7 +374,11 @@ object MoghimiLicenseManager {
         "phone_mismatch" -> "شماره موبایل با پروفایل ثبت‌شده مطابقت ندارد."
         "device_blocked" -> "دسترسی این دستگاه غیرفعال شده است."
         "device_not_registered" -> "برای این دستگاه حساب قبلی ثبت نشده است."
-        "update_required" -> "نسخهٔ برنامه قدیمی شده است. برای ادامه، نسخهٔ جدید را از سرور دانلود کن: https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_1.0.0_arm64-v8a%20%281%29.apk"
+        "update_required" -> {
+            val latest = mutableState.value.latestApkUrl
+                ?: "https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_2.0.8_arm64-v8a.apk"
+            "نسخهٔ برنامه قدیمی شده است. برای ادامه، نسخهٔ جدید را از این لینک دریافت کن: $latest"
+        }
         "invalid_or_expired_code" -> "کد فعال‌سازی نامعتبر یا منقضی شده است."
         "username_mismatch" -> "نام کاربری با سفارش تلگرام یکسان نیست."
         else -> "ارتباط با سرویس اشتراک برقرار نشد (کد $status)."
