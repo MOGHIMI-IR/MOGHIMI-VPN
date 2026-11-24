@@ -761,10 +761,10 @@ private fun MoghimiConnectionOrb(
                 .clip(CircleShape)
                 .background(
                     Brush.linearGradient(
-                        if (connected) {
-                            listOf(Color(0xFF164B4B), Color(0xFF182B48), Color(0xFF211B48))
-                        } else {
-                            listOf(Color(0xFF39245F), Color(0xFF20264F), Color(0xFF111B36))
+                        when {
+                            connected -> listOf(Color(0xFF164B4B), Color(0xFF182B48), Color(0xFF211B48))
+                            connecting -> listOf(Color(0xFF59421C), Color(0xFF302A3E), Color(0xFF111B36))
+                            else -> listOf(Color(0xFF39245F), Color(0xFF20264F), Color(0xFF111B36))
                         }
                     )
                 )
