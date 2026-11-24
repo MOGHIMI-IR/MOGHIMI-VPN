@@ -84,12 +84,13 @@ import com.v2ray.ang.R
 fun MoghimiRootScreen(
     mainViewModel: MainViewModel,
     onCloudSyncClick: () -> Unit,
-    onSmartConnectClick: () -> Unit,
+    onSmartConnectClick: ((Boolean) -> Unit) -> Unit,
     onAction: (MainAction) -> Unit,
     onNavigate: (MainDestination) -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var smartConnectMode by rememberSaveable { mutableIntStateOf(0) }
+    var smartSearching by remember { mutableStateOf(false) }
     var pendingConnectRequest by rememberSaveable { mutableIntStateOf(0) }
     var startupChecksComplete by remember { mutableIntStateOf(0) }
     var showStartupOverlay by remember { mutableIntStateOf(1) }
@@ -131,7 +132,7 @@ fun MoghimiRootScreen(
                 mainViewModel.uiState.value.isRunning ->
                     onAction(MainAction.ToggleService)
                 smartConnectMode == 1 ->
-                    onSmartConnectClick()
+                    onSmartConnectClick { searching -> smartSearching = searching }
                 license.isRegistered && license.accessAllowed ->
                     onAction(MainAction.ToggleService)
                 else -> selectedTab = 2
@@ -189,6 +190,7 @@ fun MoghimiRootScreen(
                     0 -> MoghimiConnectionPage(
                         mainViewModel = mainViewModel,
                         smartConnectEnabled = smartConnectMode == 1,
+                        smartSearching = smartSearching,
                         onSmartConnectChange = { smartConnectMode = if (it) 1 else 0 },
                         onConnectClick = {
                             if (startupChecksComplete == 0) {
@@ -197,7 +199,7 @@ fun MoghimiRootScreen(
                             } else if (mainViewModel.uiState.value.isRunning) {
                                 onAction(MainAction.ToggleService)
                             } else if (smartConnectMode == 1) {
-                                onSmartConnectClick()
+                                onSmartConnectClick { searching -> smartSearching = searching }
                             } else if (license.isRegistered && license.accessAllowed) {
                                 onAction(MainAction.ToggleService)
                             } else {
@@ -344,6 +346,7 @@ private fun moghimiNavigationColors() = NavigationBarItemDefaults.colors(
 private fun MoghimiConnectionPage(
     mainViewModel: MainViewModel,
     smartConnectEnabled: Boolean,
+    smartSearching: Boolean,
     onSmartConnectChange: (Boolean) -> Unit,
     onConnectClick: () -> Unit,
     onConfigsClick: () -> Unit,
@@ -361,6 +364,7 @@ private fun MoghimiConnectionPage(
     val selectedServer = selectedGroup.rows.firstOrNull { it.guid == uiState.selectedGuid }
         ?: allServerGroup.rows.firstOrNull { it.guid == uiState.selectedGuid }
     val running = uiState.isRunning
+    val statusColor = when { running -> Color(0xFF50E0B5); smartSearching -> Color(0xFFFFD34D); else -> Color(0xFFFFD34D) }
     val measuredPingMillis = (uiState.status as? MainStatus.ConnectionTest)?.result?.delayMillis
     val pingStatusText = when {
         !running || selectedServer == null -> "—"
@@ -435,19 +439,19 @@ private fun MoghimiConnectionPage(
                     modifier = Modifier
                         .size(9.dp)
                         .clip(CircleShape)
-                        .background(if (running) Color(0xFF50E0B5) else Color(0xFFFFD34D))
+                        .background(statusColor)
                 )
                 Spacer(Modifier.width(10.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = if (running) "وضعیت: متصل" else "وضعیت: قطع",
-                        color = MaterialTheme.colorScheme.onSurface,
+                        text = when { running -> "وضعیت: متصل"; smartSearching -> "در حال جست‌وجوی بهترین کانفیگ"; else -> "وضعیت: قطع" },
+                        color = statusColor,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
                     Text(
-                        text = if (running) "ارتباط از طریق تونل امن برقرار است" else "برای شروع، دکمهٔ اتصال را بزن",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = when { running -> "ارتباط از طریق تونل امن برقرار است"; smartSearching -> "در حال بررسی و انتخاب سریع‌ترین سرور…"; else -> "برای شروع، دکمهٔ اتصال را بزن" },
+                        color = if (smartSearching) Color(0xFFFFD34D) else MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = 11.sp
                     )
                 }
@@ -513,27 +517,32 @@ private fun MoghimiConnectionPage(
                     animationSpec = tween(220),
                     label = "smart-connect-toggle"
                 )
-                Row(
+                Surface(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(30.dp))
-                        .background(toggleColor.copy(alpha = 0.30f))
-                        .clickable { onSmartConnectChange(!smartConnectEnabled) }
-                        .padding(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onSmartConnectChange(!smartConnectEnabled) },
+                    shape = RoundedCornerShape(14.dp),
+                    color = toggleColor,
+                    contentColor = Color.White,
+                    shadowElevation = if (smartConnectEnabled) 8.dp else 3.dp,
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        if (smartConnectEnabled) Color(0xFFD7C8FF) else Color(0xFF7D859D)
+                    )
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(9.dp)
-                            .clip(CircleShape)
-                            .background(if (smartConnectEnabled) Color(0xFFBFA8FF) else Color(0xFF7D859D))
-                    )
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        if (smartConnectEnabled) "روشن" else "خاموش",
-                        color = if (smartConnectEnabled) Color(0xFFE8DEFF) else Color(0xFFAEB7D0),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 15.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("✦", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                        Text(
+                            if (smartConnectEnabled) "روشن" else "خاموش",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
                 }
             }
         }
@@ -542,18 +551,19 @@ private fun MoghimiConnectionPage(
 
         MoghimiConnectionOrb(
             connected = running,
+            connecting = smartSearching,
             onClick = onConnectClick
         )
 
         Text(
-            text = if (running) "اتصال شما فعال است" else "برای اتصال لمس کنید",
-            color = MaterialTheme.colorScheme.onBackground,
+            text = when { running -> "اتصال شما فعال است"; smartSearching -> "در حال جست‌وجوی بهترین کانفیگ"; else -> "برای اتصال لمس کنید" },
+            color = if (smartSearching) Color(0xFFFFD34D) else MaterialTheme.colorScheme.onBackground,
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
         Text(
-            text = if (running) "برای پایان ارتباط، دکمهٔ مرکزی را لمس کنید" else "با انتخاب کانفیگ، اتصال خود را آغاز کن",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text = when { running -> "برای پایان ارتباط، دکمهٔ مرکزی را لمس کنید"; smartSearching -> "در حال سنجش پینگ سرورها و انتخاب بهترین مسیر"; else -> "با انتخاب کانفیگ، اتصال خود را آغاز کن" },
+            color = if (smartSearching) Color(0xFFFFD34D) else MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.bodySmall
         )
 
@@ -641,6 +651,7 @@ private fun MoghimiConnectionPage(
 @Composable
 private fun MoghimiConnectionOrb(
     connected: Boolean,
+    connecting: Boolean,
     onClick: () -> Unit
 ) {
     val transition = rememberInfiniteTransition(label = "moghimi-orb")
@@ -648,7 +659,7 @@ private fun MoghimiConnectionOrb(
         initialValue = 0.94f,
         targetValue = 1.05f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1900, easing = FastOutSlowInEasing),
+            animation = tween(if (connecting) 620 else 1900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "orb-pulse"
@@ -657,12 +668,12 @@ private fun MoghimiConnectionOrb(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(9000, easing = LinearEasing),
+            animation = tween(if (connecting) 2400 else 9000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "orb-rotation"
     )
-    val targetAccent = if (connected) Color(0xFF55E5BC) else Color(0xFFB18CFF)
+    val targetAccent = when { connected -> Color(0xFF55E5BC); connecting -> Color(0xFFFFD34D); else -> Color(0xFFB18CFF) }
     val accent by animateColorAsState(
         targetValue = targetAccent,
         animationSpec = tween(650, easing = FastOutSlowInEasing),
@@ -763,6 +774,7 @@ private fun MoghimiConnectionOrb(
                     shape = CircleShape
                 )
                 .clickable(
+                    enabled = !connecting,
                     onClick = onClick,
                     role = Role.Button
                 )
@@ -773,17 +785,27 @@ private fun MoghimiConnectionOrb(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                painter = painterResource(
-                    if (connected) R.drawable.ic_stop_24dp else R.drawable.ic_play_24dp
-                ),
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(37.dp)
-            )
+            if (connecting) {
+                Text(
+                    "⟳",
+                    color = Color.White,
+                    fontSize = 43.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.graphicsLayer { rotationZ = rotation }
+                )
+            } else {
+                Icon(
+                    painter = painterResource(
+                        if (connected) R.drawable.ic_stop_24dp else R.drawable.ic_play_24dp
+                    ),
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(37.dp)
+                )
+            }
             Spacer(Modifier.height(7.dp))
             Text(
-                text = if (connected) "قطع اتصال" else "اتصال",
+                text = when { connecting -> "جست‌وجو"; connected -> "قطع اتصال"; else -> "اتصال" },
                 color = Color.White,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.ExtraBold
