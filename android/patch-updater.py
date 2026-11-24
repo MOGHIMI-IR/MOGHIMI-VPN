@@ -87,7 +87,7 @@ replace_once(
     """        MoghimiRootScreen(
             mainViewModel = mainViewModel,
             onCloudSyncClick = { syncMoghimiConfigs(autoSelect = true, silent = false) },
-            onSmartConnectClick = { startSmartConnection() },
+            onSmartConnectClick = { searching -> startSmartConnection(searching) },
             onAction = { action ->""",
     "Moghimi dashboard entry point"
 )
@@ -112,9 +112,10 @@ old_request = """    private fun requestServiceStart() {
         val intent = VpnService.prepare(this)
         if (intent == null) startV2Ray() else requestVpnPermission.launch(intent)
     }"""
-new_request = """    private fun startSmartConnection() {
+new_request = """    private fun startSmartConnection(onSearchingChanged: (Boolean) -> Unit) {
         if (smartConnectInFlight || entitlementCheckInFlight) return
         smartConnectInFlight = true
+        onSearchingChanged(true)
         lifecycleScope.launch {
             try {
                 if (!awaitMoghimiConfigSync()) {
@@ -138,6 +139,9 @@ new_request = """    private fun startSmartConnection() {
                 val groupId = MoghimiCloudSync.CLOUD_GROUP_ID
                 mainViewModel.onAction(MainAction.Search(""))
                 mainViewModel.onAction(MainAction.SelectGroup(groupId))
+                withTimeoutOrNull(8_000L) {
+                    mainViewModel.uiState.first { it.selectedGroupId == groupId }
+                } ?: throw IllegalStateException("گروه سرورهای مقیمی آماده نشد.")
                 var servers = withTimeoutOrNull(12_000L) {
                     mainViewModel.serversForGroup(groupId).first { it.isNotEmpty() }
                 }.orEmpty()
@@ -165,6 +169,13 @@ new_request = """    private fun startSmartConnection() {
                 ).show()
 
                 mainViewModel.testAllRealPing()
+                val testStarted = withTimeoutOrNull(5_000L) {
+                    mainViewModel.uiState.first { it.isTesting }
+                }
+                if (testStarted == null) {
+                    toastError("آزمایش سرورها شروع نشد؛ فهرست کانفیگ‌ها را دوباره همگام‌سازی کنید.")
+                    return@launch
+                }
                 val finished = withTimeoutOrNull(90_000L) {
                     mainViewModel.uiState.first { !it.isTesting }
                 }
@@ -193,6 +204,7 @@ new_request = """    private fun startSmartConnection() {
             } catch (error: Exception) {
                 toastError(error.localizedMessage ?: "اتصال هوشمند انجام نشد.")
             } finally {
+                onSearchingChanged(false)
                 smartConnectInFlight = false
             }
         }
