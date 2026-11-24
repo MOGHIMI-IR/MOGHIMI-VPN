@@ -368,7 +368,7 @@ object MoghimiLicenseManager {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             // Publishable key only; no service-role or database secret is shipped in the APK.
             setRequestProperty("apikey", API_KEY)
-            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.8")
+            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/${BuildConfig.VERSION_NAME}")
         }
         try {
             connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -395,7 +395,7 @@ object MoghimiLicenseManager {
         "device_not_registered" -> "برای این دستگاه حساب قبلی ثبت نشده است."
         "update_required" -> {
             val latest = mutableState.value.latestApkUrl
-                ?: "https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_2.0.8_arm64-v8a.apk"
+                ?: "https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_2.0.10_arm64-v8a.apk"
             "نسخهٔ برنامه قدیمی شده است. برای ادامه، نسخهٔ جدید را از این لینک دریافت کن: $latest"
         }
         "invalid_or_expired_code" -> "کد فعال‌سازی نامعتبر یا منقضی شده است."
@@ -565,6 +565,20 @@ object MoghimiLicenseManager {
             updated
         } catch (error: Exception) {
             val message = error.localizedMessage ?: "ارتباط با سرور بررسی اشتراک برقرار نشد."
+            // Keep an explicit 426/update-required response visible instead of
+            // disguising it as a generic server/network outage.
+            if (message.startsWith("نسخهٔ برنامه قدیمی شده است.")) {
+                val updateRequired = mutableState.value.copy(
+                    isRegistered = true,
+                    isLoading = false,
+                    networkAvailable = true,
+                    isServerVerified = false,
+                    updateAvailable = true,
+                    error = message
+                )
+                mutableState.value = updateRequired
+                return updateRequired
+            }
             val isAuthoritativeDenial = message == errorMessage("device_blocked", 401) ||
                 message == errorMessage("device_not_registered", 401) ||
                 message == errorMessage("device_not_found", 403)
