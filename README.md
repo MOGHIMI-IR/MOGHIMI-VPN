@@ -4,7 +4,7 @@
 
 **کلاینت بومی اندروید برای اتصال V2Ray با همگام‌سازی کانفیگ‌های سایت مقیمی**
 
-[🌐 ورود به سایت رسمی](https://moghimi-ir.github.io/MG_V2RAY/) · [⬇️ دانلود مستقیم نسخه ۲.۰.۸ ARM64 از Supabase](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_2.0.8_arm64-v8a.apk) · [📦 انتشارها در GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases)
+[🌐 ورود به سایت رسمی](https://moghimi-ir.github.io/MG_V2RAY/) · [⬇️ دانلود مستقیم نسخه ۲.۰.۱۰ ARM64 از Supabase](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_2.0.10_arm64-v8a.apk) · [📦 انتشارها در GitHub Releases](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases)
 
 </div>
 
@@ -12,13 +12,13 @@
 
 ## 📲 آخرین نسخه
 
-**Moghimi V2Ray 2.0.8 · Beta 87 · ARM64**  
-**Version Code: 4000087**
+**Moghimi V2Ray 2.0.10 · Beta 103 · ARM64**  
+**Version Code: 4000103**
 
 | روش دریافت | لینک |
 |---|---|
-| ⭐ دانلود مستقیم · Supabase | [دانلود APK نسخه ۲.۰.۸](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_2.0.8_arm64-v8a.apk) |
-| دانلود از GitHub | [دریافت APK از Release 87](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-87/MoghimiV2Ray_2.0.8_arm64-v8a.apk) |
+| ⭐ دانلود مستقیم · Supabase | [دانلود APK نسخه ۲.۰.۱۰](https://atrwhvyhopifugphfcpe.supabase.co/storage/v1/object/public/app-releases/MoghimiV2Ray_2.0.10_arm64-v8a.apk) |
+| دانلود از GitHub | [دریافت APK از Release 103](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases/download/moghimi-beta-103/MoghimiV2Ray_2.0.10_arm64-v8a.apk) |
 | سایر خروجی‌ها و سوابق | [مشاهده همه نسخه‌ها](https://github.com/MOGHIMI-IR/MOGHIMI-VPN/releases) |
 
 این APK برای گوشی‌ها و دستگاه‌های اندرویدی با معماری **ARM64 / arm64-v8a** ساخته شده است و روی iOS نصب نمی‌شود.
@@ -41,6 +41,10 @@
 کانفیگ‌های فعال سایت مقیمی در گروه ابری برنامه دریافت می‌شوند. همگام‌سازی هنگام اجرای برنامه، از طریق دکمه ابر و به‌صورت دوره‌ای انجام می‌شود. اجرای پس‌زمینه به WorkManager و محدودیت‌های باتری و زمان‌بندی Android وابسته است.
 
 کانفیگ‌هایی که در پنل سایت غیرفعال یا حذف شوند، پس از همگام‌سازی بعدی از گروه ابری برنامه کنار می‌روند. کانفیگ‌های شخصی کاربر در گروه خودشان باقی می‌مانند.
+
+## 🛠️ تغییر مهم نسخهٔ ۲.۰.۱۰
+
+در این نسخه، شناسهٔ User-Agent همگام‌سازی ابری و مدیریت مجوز از شمارهٔ نسخهٔ واقعی برنامه خوانده می‌شود؛ پاسخ مشخصِ نیاز به به‌روزرسانی نیز دیگر به خطای عمومی «سرور پاسخ نمی‌دهد» تبدیل نمی‌شود.
 
 ## 🔄 سامانه به‌روزرسانی
 
@@ -68,9 +72,9 @@
 
 ## 🧪 وضعیت انتشار و آزمایش
 
-نسخه **۲.۰.۸ Beta 87** در GitHub Actions ساخته و منتشر شده است. تست‌های واحد، ساخت APK، بررسی امضای پایدار، آپلود فایل در Supabase، تطبیق SHA-256 و ثبت خودکار نسخه در `app_releases` موفق بوده‌اند.
+نسخه **۲.۰.۱۰ (Build 103 / Beta 103)** در GitHub Actions ساخته و منتشر شده است. تست‌های واحد، ساخت APK، بررسی امضای پایدار، آپلود فایل در Supabase، تطبیق SHA-256 و ثبت خودکار نسخه در `app_releases` موفق بوده‌اند.
 
-با وجود موفقیت بررسی‌های CI، آزمایش اتصال و بازیابی شبکه روی مدل‌های مختلف گوشی باید در دستگاه واقعی انجام شود. این نسخه با برچسب **Beta** منتشر شده و نباید به‌عنوان نسخه‌ای که روی تمام دستگاه‌ها آزمایش شده معرفی شود.
+در این انتشار، بررسی‌های CI شامل تست‌های واحد، ساخت APK، بررسی امضای پایدار، وجود فایل native مربوط به TUN در APK، آپلود و تطبیق SHA-256 در Supabase و ثبت نسخهٔ فعال با موفقیت انجام شده‌اند. آزمایش نهایی اتصال و بازیابی شبکه روی مدل‌های مختلف گوشی همچنان باید روی دستگاه واقعی انجام شود. این نسخه با برچسب **Beta** منتشر شده و نباید به‌عنوان نسخه‌ای که روی تمام دستگاه‌ها آزمایش شده معرفی شود.
 
 ## 📜 مجوز و وابستگی‌ها
 
