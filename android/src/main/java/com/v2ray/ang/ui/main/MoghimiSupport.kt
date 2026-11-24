@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.v2ray.ang.MoghimiLicenseManager
 
-private const val MOGHIMI_SUPPORT_CARD = "6037998221406080"
+private const val MOGHIMI_SUPPORT_CARD = "6037998221406068"
 private const val MOGHIMI_APP_REPOSITORY = "https://github.com/MOGHIMI-IR/MOGHIMI-VPN"
 private const val MOGHIMI_BOT_REPOSITORY = "https://github.com/MOGHIMI-IR/bot-telegram_moghimi"
 private const val GITHUB_STAR_GUIDE =
