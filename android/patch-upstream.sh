@@ -49,7 +49,7 @@ source = gradle.read_text(encoding="utf-8")
 for old, new, label in [
     ('applicationId = "com.v2ray.ang"', 'applicationId = "ir.moghimi.v2ray"', "applicationId"),
     ("versionCode = 760", 'versionCode = System.getenv("MOGHIMI_VERSION_CODE")?.toIntOrNull() ?: 1', "versionCode"),
-    ('versionName = "2.4.0"', 'versionName = "2.0.9"', "versionName"),
+    ('versionName = "2.4.0"', 'versionName = "2.0.10"', "versionName"),
 ]:
     if source.count(old) != 1:
         raise SystemExit(f"Expected one Gradle match for {label}")
