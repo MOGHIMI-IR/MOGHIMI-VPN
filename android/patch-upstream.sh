@@ -100,14 +100,7 @@ signing_block = """    val moghimiStoreFile = System.getenv("MOGHIMI_SIGNING_STO
 if source.count(signing_marker) != 1:
     raise SystemExit("Could not locate Android debug build type for stable signing")
 source = source.replace(signing_marker, signing_block + signing_marker, 1)
-# Avoid legacy compression/extraction of native .so libraries at install time.
-# minSdk is 24, so use Android's uncompressed, page-aligned APK packaging path.
-legacy_packaging = "useLegacyPackaging = true"
-if source.count(legacy_packaging) == 1:
-    source = source.replace(legacy_packaging, "useLegacyPackaging = false", 1)
-elif source.count("useLegacyPackaging = false") != 1:
-    raise SystemExit("Could not safely set native-library packaging to uncompressed mode")
-
+# Keep legacy native-library extraction: Root mode executes libhevsockstun.so from nativeLibraryDir.
 gradle.write_text(source, encoding="utf-8")
 
 # Apply the Moghimi palette. System dynamic colors default to off so Android 12+
