@@ -118,6 +118,24 @@ jobs:
           APK="$APK_DIR/MoghimiV2Ray_2.0.10_arm64-v8a.apk"
           test -s "$APK"
 
+          # Native libraries must be stored uncompressed so Android can load them
+          # directly from the aligned APK instead of extracting duplicate .so files.
+          python3 - "$APK" <<'PY'
+          import sys
+          import zipfile
+
+          apk = sys.argv[1]
+          with zipfile.ZipFile(apk) as archive:
+              native = [item for item in archive.infolist()
+                        if item.filename.startswith("lib/") and item.filename.endswith(".so")]
+              if not native:
+                  raise SystemExit("No native libraries found in APK")
+              compressed = [item.filename for item in native if item.compress_type != zipfile.ZIP_STORED]
+              if compressed:
+                  raise SystemExit("Native libraries are compressed: " + ", ".join(compressed[:8]))
+              print(f"Verified {len(native)} uncompressed native libraries.")
+          PY
+
           # Verify the actual packaged version code. Playstore ARM64 outputs use a
           # 4,000,000 ABI offset; the remainder must equal this CI run number.
           EXPECTED_VERSION_CODE="$((4000000 + GITHUB_RUN_NUMBER))"
