@@ -115,7 +115,7 @@ jobs:
         run: |
           mkdir -p release-files
           APK_DIR="android/upstream/V2rayNG/app/build/outputs/apk/playstore/release"
-          APK="$APK_DIR/MoghimiV2Ray_2.0.9_arm64-v8a.apk"
+          APK="$APK_DIR/MoghimiV2Ray_2.0.10_arm64-v8a.apk"
           test -s "$APK"
 
           # Verify the actual packaged version code. Playstore ARM64 outputs use a
@@ -123,7 +123,7 @@ jobs:
           EXPECTED_VERSION_CODE="$((4000000 + GITHUB_RUN_NUMBER))"
           BADGING="$("$ANDROID_HOME/build-tools/37.0.0/aapt" dump badging "$APK")"
           grep -F "package: name='ir.moghimi.v2ray'" <<< "$BADGING" >/dev/null
-          grep -F "versionCode='$EXPECTED_VERSION_CODE' versionName='2.0.9'" <<< "$BADGING" >/dev/null || {
+          grep -F "versionCode='$EXPECTED_VERSION_CODE' versionName='2.0.10'" <<< "$BADGING" >/dev/null || {
             echo "::error::APK versionCode mismatch. Expected $EXPECTED_VERSION_CODE for build $GITHUB_RUN_NUMBER."
             exit 1
           }
@@ -187,7 +187,7 @@ jobs:
             exit 0
           fi
 
-          VERSION_NAME="2.0.9"
+          VERSION_NAME="2.0.10"
           VERSION_CODE="$((4000000 + GITHUB_RUN_NUMBER))"
           APK="release-files/MoghimiV2Ray_${VERSION_NAME}_arm64-v8a.apk"
           test -s "$APK"
@@ -256,7 +256,7 @@ jobs:
             echo ""
             echo "- Source: pinned v2rayNG/Xray checkout"
             echo "- App package: ir.moghimi.v2ray"
-            echo "- Version: 2.0.9 (build ${{ github.run_number }}, ARM64 only)"
+            echo "- Version: 2.0.10 (build ${{ github.run_number }}, ARM64 only)"
             echo "- Signing mode: ${MOGHIMI_SIGNING_MODE:-debug-fallback}"
             echo "- Supabase sync: ${{ steps.supabase.outputs.status }}"
             echo "- APK architecture variants are listed in the Artifacts section when the build succeeds."
