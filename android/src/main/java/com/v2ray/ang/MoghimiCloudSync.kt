@@ -200,7 +200,7 @@ object MoghimiCloudSync {
             readTimeout = 8_000
             instanceFollowRedirects = true
             setRequestProperty("Accept", "*/*")
-            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/2.0.8")
+            setRequestProperty("User-Agent", "MoghimiV2Ray-Android/${BuildConfig.VERSION_NAME}")
             if (includeApiKey) {
                 // Supabase sb_publishable keys are opaque API keys, not JWTs.
                 // Send them only in the apikey header; Authorization is reserved for user JWTs.
